@@ -1,10 +1,11 @@
 import os
 from datetime import datetime
+from typing import List, Optional
 
 import couchdb
 from dotenv import load_dotenv
 
-from .views import create_workout_views
+from .views import create_user_views, create_workout_views
 
 load_dotenv()
 
@@ -29,6 +30,7 @@ class Database:
     def _init_views(self):
         """Initialize CouchDB views."""
         create_workout_views(self.db)
+        create_user_views(self.db)
 
     def save_document(self, doc):
         """Save a document to the database."""
@@ -119,3 +121,63 @@ class Database:
                 include_docs=True,
             )
         ]
+
+    # User Profile Methods
+    def get_user_by_username(self, username: str):
+        """Get user profile by username."""
+        try:
+            return [
+                row.value for row in self.db.view("users/by_username", key=username)
+            ][0]
+        except IndexError:
+            return None
+
+    def get_users_by_fitness_goal(self, goal: str):
+        """Get all users with a specific fitness goal."""
+        return [
+            row.value
+            for row in self.db.view(
+                "users/by_fitness_goals", startkey=[goal], endkey=[goal, {}]
+            )
+        ]
+
+    def get_users_by_injury(self, body_part: str, severity: Optional[int] = None):
+        """Get all users with injuries to a specific body part."""
+        if severity is not None:
+            return [
+                row.value
+                for row in self.db.view(
+                    "users/by_injuries",
+                    startkey=[body_part, severity],
+                    endkey=[body_part, severity],
+                )
+            ]
+        return [
+            row.value
+            for row in self.db.view(
+                "users/by_injuries", startkey=[body_part], endkey=[body_part, 10]
+            )
+        ]
+
+    def update_user_hevy_api_key(self, user_id: str, api_key: str):
+        """Update a user's Hevy API key."""
+        try:
+            user_doc = self.db[user_id]
+            user_doc["hevy_api_key"] = api_key
+            user_doc["hevy_api_key_updated_at"] = datetime.utcnow().isoformat()
+            return self.db.save(user_doc)
+        except couchdb.http.ResourceNotFound:
+            return None
+
+    def get_user_workout_history(
+        self,
+        user_id: str,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+    ):
+        """Get a user's workout history."""
+        if start_date and end_date:
+            return self.get_workouts_by_date_range(start_date, end_date)
+        return (
+            self.get_all_documents()
+        )  # You might want to add a user_id field to workouts for better filtering

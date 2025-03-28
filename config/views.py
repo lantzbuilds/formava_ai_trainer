@@ -89,3 +89,83 @@ def create_workout_views(db):
     except Exception as e:
         print(f"Error creating views: {e}")
         return False
+
+
+def create_user_views(db):
+    """Create all necessary views for user profile queries."""
+
+    # View for finding users by username
+    username_view = {
+        "map": """
+        function(doc) {
+            if (doc.username) {
+                emit(doc.username, {
+                    id: doc._id,
+                    email: doc.email,
+                    created_at: doc.created_at,
+                    updated_at: doc.updated_at,
+                    has_hevy_key: !!doc.hevy_api_key
+                });
+            }
+        }
+        """,
+        "reduce": "_stats",
+    }
+
+    # View for finding users by fitness goals
+    fitness_goals_view = {
+        "map": """
+        function(doc) {
+            if (doc.fitness_goals) {
+                doc.fitness_goals.forEach(function(goal) {
+                    emit([goal, doc.created_at], {
+                        user_id: doc._id,
+                        username: doc.username,
+                        fitness_goals: doc.fitness_goals,
+                        experience_level: doc.experience_level
+                    });
+                });
+            }
+        }
+        """,
+        "reduce": "_stats",
+    }
+
+    # View for finding users by injuries
+    injuries_view = {
+        "map": """
+        function(doc) {
+            if (doc.injuries) {
+                doc.injuries.forEach(function(injury) {
+                    if (injury.is_active) {
+                        emit([injury.body_part, injury.severity], {
+                            user_id: doc._id,
+                            username: doc.username,
+                            injury_description: injury.description,
+                            date_injured: injury.date_injured,
+                            notes: injury.notes
+                        });
+                    }
+                });
+            }
+        }
+        """,
+        "reduce": "_stats",
+    }
+
+    # Create the design document with all views
+    design_doc = {
+        "_id": "_design/users",
+        "views": {
+            "by_username": username_view,
+            "by_fitness_goals": fitness_goals_view,
+            "by_injuries": injuries_view,
+        },
+    }
+
+    try:
+        db.save(design_doc)
+        return True
+    except Exception as e:
+        print(f"Error creating views: {e}")
+        return False
