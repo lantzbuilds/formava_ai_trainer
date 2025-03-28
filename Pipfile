@@ -8,6 +8,7 @@ python-dotenv = "*"
 openai = "*"
 requests = "*"
 pydantic = "*"
+couchdb = "*"
 
 [dev-packages]
 black = "*"

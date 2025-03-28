@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "58347c5310f386beda6df57001e21da1447bf8be20b79a06ca28560e1372b25a"
+            "sha256": "a74058925f63dd0238d0b7b2971f8437ca76a9ea237f66447b40891c7fa03f45"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -137,6 +137,14 @@
             ],
             "markers": "python_version >= '3.7'",
             "version": "==3.4.1"
+        },
+        "couchdb": {
+            "hashes": [
+                "sha256:1386a1a43f25bed3667e3b805222054940d674fa1967fa48e9d2012a18630ab7",
+                "sha256:13a28a1159c49f8346732e8724b9a4d65cba54bec017c4a7eeb1499fe88151d1"
+            ],
+            "index": "pypi",
+            "version": "==1.2"
         },
         "distro": {
             "hashes": [
