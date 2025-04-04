@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
 import argparse
+import base64
 import secrets
 import string
+
+from cryptography.fernet import Fernet
+
+
+def generate_fernet_key():
+    """Generate a valid Fernet key."""
+    key = Fernet.generate_key()
+    return key.decode()
 
 
 def generate_password(
@@ -57,7 +66,14 @@ def generate_password(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate a secure password")
+    parser = argparse.ArgumentParser(
+        description="Generate secure passwords or Fernet keys"
+    )
+    parser.add_argument(
+        "--fernet",
+        action="store_true",
+        help="Generate a Fernet key instead of a password",
+    )
     parser.add_argument(
         "-l", "--length", type=int, default=16, help="Password length (default: 16)"
     )
@@ -75,14 +91,20 @@ def main():
     args = parser.parse_args()
 
     try:
-        password = generate_password(
-            length=args.length,
-            use_uppercase=not args.no_uppercase,
-            use_lowercase=not args.no_lowercase,
-            use_numbers=not args.no_numbers,
-            use_special=not args.no_special,
-        )
-        print(password)
+        if args.fernet:
+            key = generate_fernet_key()
+            print("\nGenerated Fernet key:")
+            print(f"ENCRYPTION_KEY={key}")
+            print("\nAdd this to your .env file")
+        else:
+            password = generate_password(
+                length=args.length,
+                use_uppercase=not args.no_uppercase,
+                use_lowercase=not args.no_lowercase,
+                use_numbers=not args.no_numbers,
+                use_special=not args.no_special,
+            )
+            print(password)
     except ValueError as e:
         print(f"Error: {e}")
         return 1

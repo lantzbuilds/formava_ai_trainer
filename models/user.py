@@ -24,17 +24,54 @@ class FitnessGoal(str, Enum):
     REHABILITATION = "rehabilitation"
 
 
-class Injury(BaseModel):
-    description: str
-    body_part: str
-    severity: int = Field(ge=1, le=10)  # 1-10 scale
-    date_injured: Optional[datetime] = None
-    is_active: bool = True
-    notes: Optional[str] = None
+class InjurySeverity(Enum):
+    MILD = "mild"
+    MODERATE = "moderate"
+    SEVERE = "severe"
+
+
+class Injury:
+    def __init__(
+        self,
+        description: str,
+        body_part: str,
+        severity: InjurySeverity,
+        date_injured: datetime,
+        is_active: bool = True,
+        notes: Optional[str] = None,
+    ):
+        self.description = description
+        self.body_part = body_part
+        self.severity = severity
+        self.date_injured = date_injured
+        self.is_active = is_active
+        self.notes = notes
+
+    def to_dict(self) -> dict:
+        return {
+            "description": self.description,
+            "body_part": self.body_part,
+            "severity": self.severity.value,
+            "date_injured": self.date_injured.isoformat(),
+            "is_active": self.is_active,
+            "notes": self.notes,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Injury":
+        return cls(
+            description=data["description"],
+            body_part=data["body_part"],
+            severity=InjurySeverity(data["severity"]),
+            date_injured=datetime.fromisoformat(data["date_injured"]),
+            is_active=data["is_active"],
+            notes=data.get("notes"),
+        )
 
 
 class UserProfile(BaseModel):
     id: str = Field(default_factory=lambda: f"user_{datetime.utcnow().timestamp()}")
+    type: str = "user_profile"  # Add this field to identify user documents
     username: str
     email: EmailStr
     password_hash: str  # Will store bcrypt hash
@@ -87,6 +124,29 @@ class UserProfile(BaseModel):
         """Verify a password against the stored hash."""
         return bcrypt.checkpw(
             password.encode("utf-8"), self.password_hash.encode("utf-8")
+        )
+
+    def to_dict(self) -> dict:
+        return {
+            "username": self.username,
+            "email": self.email,
+            "password_hash": self.password_hash,
+            "injuries": [injury.to_dict() for injury in self.injuries],
+            "hevy_api_key": self.hevy_api_key,
+            "type": self.type,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "UserProfile":
+        return cls(
+            username=data["username"],
+            email=data["email"],
+            password_hash=data["password_hash"],
+            injuries=[
+                Injury.from_dict(injury_data)
+                for injury_data in data.get("injuries", [])
+            ],
+            hevy_api_key=data.get("hevy_api_key"),
         )
 
     class Config:

@@ -1,3 +1,4 @@
+import logging
 import os
 from datetime import datetime
 from typing import List, Optional
@@ -6,6 +7,10 @@ import couchdb
 from dotenv import load_dotenv
 
 from .views import create_user_views, create_workout_views
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -17,6 +22,8 @@ class Database:
         username = os.getenv("COUCHDB_USERNAME", "admin")
         password = os.getenv("COUCHDB_PASSWORD", "password")
 
+        logger.info(f"Connecting to CouchDB at {couchdb_url}")
+
         # Create server with authentication
         self.server = couchdb.Server(couchdb_url)
         self.server.resource.credentials = (username, password)
@@ -25,8 +32,10 @@ class Database:
         self.db_name = os.getenv("COUCHDB_DATABASE", "ai_personal_trainer")
         try:
             self.db = self.server[self.db_name]
+            logger.info(f"Connected to existing database: {self.db_name}")
         except couchdb.http.ResourceNotFound:
             self.db = self.server.create(self.db_name)
+            logger.info(f"Created new database: {self.db_name}")
 
         # Initialize views
         self._init_views()
@@ -48,14 +57,31 @@ class Database:
 
     def save_document(self, doc):
         """Save a document to the database."""
-        return self.db.save(doc)
+        try:
+            logger.info(f"Saving document with ID: {doc.get('_id', 'new')}")
+            logger.debug(f"Document content: {doc}")
+            result = self.db.save(doc)
+            logger.info(
+                f"Document saved successfully. ID: {result[0]}, Rev: {result[1]}"
+            )
+            return result
+        except Exception as e:
+            logger.error(f"Error saving document: {str(e)}")
+            raise
 
     def get_document(self, doc_id):
         """Retrieve a document by ID."""
         try:
-            return self.db[doc_id]
+            logger.info(f"Retrieving document: {doc_id}")
+            doc = self.db[doc_id]
+            logger.info(f"Document retrieved successfully: {doc_id}")
+            return doc
         except couchdb.http.ResourceNotFound:
+            logger.warning(f"Document not found: {doc_id}")
             return None
+        except Exception as e:
+            logger.error(f"Error retrieving document: {str(e)}")
+            raise
 
     def update_document(self, doc):
         """Update an existing document."""

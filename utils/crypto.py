@@ -1,3 +1,4 @@
+import base64
 import os
 
 from cryptography.fernet import Fernet
@@ -17,11 +18,27 @@ def get_or_create_key():
         print("WARNING: No ENCRYPTION_KEY found in .env. Generated a new one.")
         print("Please add this to your .env file:")
         print(f"ENCRYPTION_KEY={key}")
-    return key.encode()
+        return key
+    else:
+        # Ensure the key is properly formatted
+        try:
+            # Try to decode and re-encode to ensure it's valid
+            key_bytes = base64.urlsafe_b64decode(key)
+            if len(key_bytes) != 32:
+                raise ValueError("Key must be 32 bytes")
+            # Re-encode the key to ensure it's in the correct format
+            return base64.urlsafe_b64encode(key_bytes).decode()
+        except Exception as e:
+            print(f"Invalid ENCRYPTION_KEY format: {e}")
+            # Generate a new key if the existing one is invalid
+            new_key = Fernet.generate_key().decode()
+            print("Generated a new key. Please update your .env file:")
+            print(f"ENCRYPTION_KEY={new_key}")
+            return new_key
 
 
 # Initialize Fernet with the key
-fernet = Fernet(get_or_create_key())
+fernet = Fernet(get_or_create_key().encode())
 
 
 def encrypt_api_key(api_key: str) -> str:

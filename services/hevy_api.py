@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ..utils.crypto import decrypt_api_key
+from utils.crypto import decrypt_api_key
 
 
 class HevyAPI:

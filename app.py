@@ -1,3 +1,4 @@
+import logging
 import os
 from datetime import datetime, timedelta
 
@@ -19,6 +20,10 @@ from utils.units import (
     kg_to_lbs,
     lbs_to_kg,
 )
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -50,7 +55,7 @@ def sidebar():
         if st.sidebar.button("Logout"):
             st.session_state.user_id = None
             st.session_state.username = None
-            st.experimental_rerun()
+            st.rerun()
 
         st.sidebar.markdown("---")
         st.sidebar.subheader("Navigation")
@@ -89,7 +94,7 @@ def login_page():
                 if user.verify_password(password):
                     st.session_state.user_id = user.id
                     st.session_state.username = username
-                    st.experimental_rerun()
+                    st.rerun()
                 else:
                     st.error("Invalid username or password")
             else:
@@ -100,6 +105,11 @@ def login_page():
 def register_page():
     st.title("Register")
 
+    # Initialize session state for injuries if not exists
+    if "injuries" not in st.session_state:
+        st.session_state.injuries = []
+
+    # Main registration form
     with st.form("register_form"):
         username = st.text_input("Username")
         email = st.text_input("Email")
@@ -141,80 +151,137 @@ def register_page():
             type="password",
             help="You can add this later in your profile",
         )
-        if hevy_api_key:
-            # Encrypt the API key before storing
-            encrypted_key = encrypt_api_key(hevy_api_key)
-        else:
-            encrypted_key = None
-
-        # Injuries
-        st.subheader("Injuries (Optional)")
-        injuries = []
-        injury_count = st.number_input(
-            "Number of injuries to add", min_value=0, max_value=5, value=0
-        )
-
-        for i in range(injury_count):
-            with st.expander(f"Injury {i+1}"):
-                description = st.text_input(f"Description", key=f"injury_desc_{i}")
-                body_part = st.text_input(f"Body Part", key=f"injury_part_{i}")
-                severity = st.selectbox(
-                    f"Severity",
-                    ["mild", "moderate", "severe"],
-                    key=f"injury_severity_{i}",
-                )
-                date_injured = st.date_input(
-                    f"Date Injured", value=datetime.now().date(), key=f"injury_date_{i}"
-                )
-                is_active = st.checkbox(
-                    f"Currently Active", value=True, key=f"injury_active_{i}"
-                )
-                notes = st.text_area(f"Notes", key=f"injury_notes_{i}")
-
-                if description and body_part:  # Only add if required fields are filled
-                    injuries.append(
-                        {
-                            "description": description,
-                            "body_part": body_part,
-                            "severity": severity,
-                            "date_injured": datetime.combine(
-                                date_injured, datetime.min.time()
-                            ).isoformat(),
-                            "is_active": is_active,
-                            "notes": notes,
-                        }
-                    )
+        encrypted_key = None
+        if (
+            hevy_api_key and hevy_api_key.strip()
+        ):  # Only encrypt if key is provided and not empty
+            try:
+                encrypted_key = encrypt_api_key(hevy_api_key)
+            except Exception as e:
+                st.error(f"Error encrypting Hevy API key: {str(e)}")
+                return  # Stop form submission if encryption fails
 
         submit = st.form_submit_button("Register")
 
-        if submit:
-            if password != confirm_password:
-                st.error("Passwords do not match")
-            else:
-                try:
-                    # Create new user with hashed password
-                    new_user = UserProfile.create_user(
-                        username=username,
-                        email=email,
-                        password=password,
-                        height_cm=height_cm,
-                        weight_kg=weight_kg,
-                        sex=Sex(sex),
-                        age=age,
-                        fitness_goals=[FitnessGoal(g) for g in goals],
-                        experience_level=experience,
-                        hevy_api_key=encrypted_key,
-                        injuries=injuries,
-                    )
+    # Separate form for injuries
+    st.subheader("Injuries (Optional)")
+    injury_count = st.number_input(
+        "Number of injuries to add",
+        min_value=0,
+        max_value=5,
+        value=len(st.session_state.injuries),
+        key="injury_count",
+    )
 
-                    # Save to database
-                    doc_id, doc_rev = db.save_document(new_user.dict())
-                    st.success(f"Registration successful! Welcome, {username}!")
-                    st.session_state.user_id = doc_id
-                    st.session_state.username = username
-                    st.experimental_rerun()
-                except Exception as e:
-                    st.error(f"Registration failed: {str(e)}")
+    # Display existing injuries
+    for i, injury in enumerate(st.session_state.injuries):
+        with st.expander(f"Injury {i+1}"):
+            st.write(f"**Description:** {injury['description']}")
+            st.write(f"**Body Part:** {injury['body_part']}")
+            st.write(f"**Severity:** {injury['severity']}")
+            st.write(f"**Date Injured:** {injury['date_injured']}")
+            st.write(f"**Currently Active:** {'Yes' if injury['is_active'] else 'No'}")
+            if injury["notes"]:
+                st.write(f"**Notes:** {injury['notes']}")
+            if st.button(f"Remove Injury {i+1}", key=f"remove_{i}"):
+                st.session_state.injuries.pop(i)
+                st.rerun()
+
+    # Add new injuries
+    if injury_count > len(st.session_state.injuries):
+        with st.form("injury_form"):
+            st.write("### Add New Injury")
+            description = st.text_input(
+                "Description",
+                key="new_injury_desc",
+                help="Brief description of the injury (e.g., 'Torn ACL', 'Rotator cuff strain')",
+            )
+            body_part = st.text_input(
+                "Body Part",
+                key="new_injury_part",
+                help="The specific body part affected (e.g., 'Left knee', 'Right shoulder')",
+            )
+            severity = st.selectbox(
+                "Severity",
+                [s.value for s in InjurySeverity],
+                key="new_injury_severity",
+                help="How severe the injury is. Mild: minor discomfort, Moderate: affects daily activities, Severe: requires medical attention",
+            )
+            date_injured = st.date_input(
+                "Date Injured",
+                value=datetime.now().date(),
+                key="new_injury_date",
+                help="When the injury occurred",
+            )
+            is_active = st.checkbox(
+                "Currently Active",
+                value=True,
+                key="new_injury_active",
+                help="Check if you're still experiencing symptoms from this injury",
+            )
+            notes = st.text_area(
+                "Notes",
+                key="new_injury_notes",
+                help="Additional details about the injury, treatment, or recovery process",
+            )
+
+            if st.form_submit_button("Add Injury"):
+                if description and body_part:
+                    new_injury = {
+                        "description": description,
+                        "body_part": body_part,
+                        "severity": severity,
+                        "date_injured": datetime.combine(
+                            date_injured, datetime.min.time()
+                        ).isoformat(),
+                        "is_active": is_active,
+                        "notes": notes,
+                    }
+                    st.session_state.injuries.append(new_injury)
+                    st.rerun()
+                else:
+                    st.error("Description and Body Part are required")
+
+    # Handle registration submission
+    if submit:
+        if password != confirm_password:
+            st.error("Passwords do not match")
+        else:
+            try:
+                logger.info(f"Creating new user: {username}")
+                # Create new user with hashed password
+                new_user = UserProfile.create_user(
+                    username=username,
+                    email=email,
+                    password=password,
+                    height_cm=height_cm,
+                    weight_kg=weight_kg,
+                    sex=Sex(sex),
+                    age=age,
+                    fitness_goals=[FitnessGoal(g) for g in goals],
+                    experience_level=experience,
+                    hevy_api_key=encrypted_key,
+                    injuries=st.session_state.injuries,
+                )
+
+                logger.info(f"User object created successfully. Type: {new_user.type}")
+                logger.debug(f"User object: {new_user.dict()}")
+
+                # Save to database
+                logger.info("Saving user to database...")
+                doc_id, doc_rev = db.save_document(new_user.dict())
+                logger.info(f"User saved successfully. ID: {doc_id}, Rev: {doc_rev}")
+
+                st.success(f"Registration successful! Welcome, {username}!")
+                st.session_state.user_id = doc_id
+                st.session_state.username = username
+                # Clear injuries from session state
+                st.session_state.injuries = []
+                st.rerun()
+            except Exception as e:
+                logger.error(f"Registration failed: {str(e)}", exc_info=True)
+                st.error(f"Registration failed: {str(e)}")
+                st.write(f"Debug: Error details: {type(e).__name__}")
 
 
 # Dashboard page
@@ -346,7 +413,7 @@ def profile_page():
                     encrypted_key = encrypt_api_key(new_key)
                     db.update_user_hevy_api_key(user_id, encrypted_key)
                     st.success("Hevy API key updated successfully!")
-                    st.experimental_rerun()
+                    st.rerun()
         else:
             st.warning("Hevy API key is not configured")
             new_key = st.text_input("Hevy API Key", type="password")
@@ -354,7 +421,7 @@ def profile_page():
                 encrypted_key = encrypt_api_key(new_key)
                 db.update_user_hevy_api_key(user_id, encrypted_key)
                 st.success("Hevy API key saved successfully!")
-                st.experimental_rerun()
+                st.rerun()
 
         # Edit profile
         st.subheader("Edit Profile")
@@ -400,7 +467,7 @@ def profile_page():
 
                 db.update_document(user_doc)
                 st.success("Profile updated successfully!")
-                st.experimental_rerun()
+                st.rerun()
     else:
         st.error("User profile not found.")
 
