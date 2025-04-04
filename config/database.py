@@ -114,7 +114,7 @@ class Database:
     def _create_design_documents(self):
         """Create necessary design documents for views."""
         try:
-            # Check if design document exists
+            # Check if users design document exists
             if "_design/users" not in self.db:
                 logger.info("Creating users design document")
                 self.db.save(
@@ -131,6 +131,52 @@ class Database:
                     }
                 )
                 logger.info("Users design document created successfully")
+
+            # Check if exercises design document exists
+            if "_design/exercises" not in self.db:
+                logger.info("Creating exercises design document")
+                self.db.save(
+                    {
+                        "_id": "_design/exercises",
+                        "views": {
+                            "by_hevy_id": {
+                                "map": "function(doc) { if (doc.type === 'exercise') { emit(doc.hevy_id, doc); } }"
+                            },
+                            "by_muscle_group": {
+                                "map": "function(doc) { if (doc.type === 'exercise') { emit(doc.muscle_group, doc); } }"
+                            },
+                            "all": {
+                                "map": "function(doc) { if (doc.type === 'exercise') { emit(doc._id, doc); } }"
+                            },
+                        },
+                    }
+                )
+                logger.info("Exercises design document created successfully")
+
+            # Check if workouts design document exists
+            if "_design/workouts" not in self.db:
+                logger.info("Creating workouts design document")
+                self.db.save(
+                    {
+                        "_id": "_design/workouts",
+                        "views": {
+                            "by_hevy_id": {
+                                "map": "function(doc) { if (doc.type === 'workout') { emit(doc.hevy_id, doc); } }"
+                            },
+                            "by_date": {
+                                "map": "function(doc) { if (doc.type === 'workout') { emit(doc.start_time, doc); } }"
+                            },
+                            "by_exercise": {
+                                "map": "function(doc) { if (doc.type === 'workout') { doc.exercises.forEach(function(ex) { emit([ex.template_id, doc.start_time], doc); }); } }"
+                            },
+                            "stats": {
+                                "map": "function(doc) { if (doc.type === 'workout') { emit(doc.start_time, {duration: doc.duration, exercise_count: doc.exercises.length}); } }",
+                                "reduce": "function(keys, values, rereduce) { return {total_duration: values.reduce(function(a, b) { return a + b.duration; }, 0), total_exercises: values.reduce(function(a, b) { return a + b.exercise_count; }, 0), count: values.length}; }",
+                            },
+                        },
+                    }
+                )
+                logger.info("Workouts design document created successfully")
         except Exception as e:
             logger.error(f"Error creating design documents: {str(e)}")
 
@@ -346,3 +392,240 @@ class Database:
         return (
             self.get_all_documents()
         )  # You might want to add a user_id field to workouts for better filtering
+
+    def save_exercise(self, exercise_data: Dict[str, Any]) -> str:
+        """
+        Save an exercise to the database.
+
+        Args:
+            exercise_data: Exercise data to save
+
+        Returns:
+            Document ID
+        """
+        try:
+            # Check if exercise already exists by hevy_id
+            if "hevy_id" in exercise_data:
+                existing = self.get_exercise_by_hevy_id(exercise_data["hevy_id"])
+                if existing:
+                    # Update existing exercise
+                    exercise_data["_id"] = existing["_id"]
+                    exercise_data["_rev"] = existing["_rev"]
+
+            # Save to database
+            doc_id, _ = self.db.save(exercise_data)
+            logger.info(f"Saved exercise with ID: {doc_id}")
+            return doc_id
+        except Exception as e:
+            logger.error(f"Error saving exercise: {str(e)}")
+            raise
+
+    def get_exercise_by_hevy_id(self, hevy_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get an exercise by its Hevy ID.
+
+        Args:
+            hevy_id: The Hevy ID of the exercise
+
+        Returns:
+            Exercise document if found, None otherwise
+        """
+        try:
+            results = self.db.view(
+                "exercises/by_hevy_id", key=hevy_id, include_docs=True
+            )
+            for row in results:
+                return row.doc
+            return None
+        except Exception as e:
+            logger.error(f"Error getting exercise by Hevy ID: {str(e)}")
+            return None
+
+    def get_exercises_by_muscle_group(self, muscle_group: str) -> List[Dict[str, Any]]:
+        """
+        Get all exercises for a specific muscle group.
+
+        Args:
+            muscle_group: The muscle group to filter by
+
+        Returns:
+            List of exercise documents
+        """
+        try:
+            return [
+                row.doc
+                for row in self.db.view(
+                    "exercises/by_muscle_group", key=muscle_group, include_docs=True
+                )
+            ]
+        except Exception as e:
+            logger.error(f"Error getting exercises by muscle group: {str(e)}")
+            return []
+
+    def get_all_exercises(self) -> List[Dict[str, Any]]:
+        """
+        Get all exercises from the database.
+
+        Returns:
+            List of all exercise documents
+        """
+        try:
+            return [row.doc for row in self.db.view("exercises/all", include_docs=True)]
+        except Exception as e:
+            logger.error(f"Error getting all exercises: {str(e)}")
+            return []
+
+    def save_workout(self, workout_data: Dict[str, Any]) -> str:
+        """
+        Save a workout to the database.
+
+        Args:
+            workout_data: Workout data to save
+
+        Returns:
+            Document ID
+        """
+        try:
+            # Check if workout already exists by hevy_id
+            if "hevy_id" in workout_data:
+                existing = self.get_workout_by_hevy_id(workout_data["hevy_id"])
+                if existing:
+                    # Update existing workout
+                    workout_data["_id"] = existing["_id"]
+                    workout_data["_rev"] = existing["_rev"]
+
+            # Save to database
+            doc_id, _ = self.db.save(workout_data)
+            logger.info(f"Saved workout with ID: {doc_id}")
+            return doc_id
+        except Exception as e:
+            logger.error(f"Error saving workout: {str(e)}")
+            raise
+
+    def get_workout_by_hevy_id(self, hevy_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a workout by its Hevy ID.
+
+        Args:
+            hevy_id: The Hevy ID of the workout
+
+        Returns:
+            Workout document if found, None otherwise
+        """
+        try:
+            results = self.db.view(
+                "workouts/by_hevy_id", key=hevy_id, include_docs=True
+            )
+            for row in results:
+                return row.doc
+            return None
+        except Exception as e:
+            logger.error(f"Error getting workout by Hevy ID: {str(e)}")
+            return None
+
+    def save_exercises(
+        self, exercises: List[Dict[str, Any]], user_id: Optional[str] = None
+    ) -> None:
+        """
+        Save exercises to the database.
+
+        Args:
+            exercises: List of exercise data to save
+            user_id: Optional user ID for custom exercises. If None, exercises are considered base exercises.
+        """
+        try:
+            # Determine if these are base exercises or custom exercises
+            is_custom = user_id is not None
+
+            # Create a document to store exercises
+            if is_custom:
+                # For custom exercises, store them in a user-specific document
+                doc_id = f"custom_exercises_{user_id}"
+                doc_type = "custom_exercise_list"
+            else:
+                # For base exercises, store them in a shared document
+                doc_id = "base_exercises"
+                doc_type = "base_exercise_list"
+
+            exercise_doc = {
+                "_id": doc_id,
+                "type": doc_type,
+                "exercises": exercises,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+
+            # Check if document already exists
+            try:
+                existing = self.db[doc_id]
+                exercise_doc["_rev"] = existing["_rev"]
+            except couchdb.http.ResourceNotFound:
+                pass
+
+            # Save to database
+            self.db.save(exercise_doc)
+            logger.info(
+                f"Saved {len(exercises)} {'custom' if is_custom else 'base'} exercises"
+            )
+        except Exception as e:
+            logger.error(f"Error saving exercises: {str(e)}")
+            raise
+
+    def get_exercises(
+        self, user_id: Optional[str] = None, include_custom: bool = True
+    ) -> List[Dict[str, Any]]:
+        """
+        Get all available exercises from the database.
+
+        Args:
+            user_id: Optional user ID to get custom exercises for
+            include_custom: Whether to include custom exercises in the results
+
+        Returns:
+            List of exercise dictionaries
+        """
+        try:
+            exercises = []
+
+            # Get base exercises
+            try:
+                base_doc = self.db.get("base_exercises")
+                if base_doc and "exercises" in base_doc:
+                    exercises.extend(base_doc["exercises"])
+            except couchdb.http.ResourceNotFound:
+                logger.info("No base exercises found in database")
+
+            # Get custom exercises if requested
+            if include_custom and user_id:
+                try:
+                    custom_doc = self.db.get(f"custom_exercises_{user_id}")
+                    if custom_doc and "exercises" in custom_doc:
+                        exercises.extend(custom_doc["exercises"])
+                except couchdb.http.ResourceNotFound:
+                    logger.info(f"No custom exercises found for user {user_id}")
+
+            return exercises
+        except Exception as e:
+            logger.error(f"Error getting exercises: {str(e)}")
+            return []
+
+    def get_custom_exercises(self, user_id: str) -> List[Dict[str, Any]]:
+        """
+        Get custom exercises for a specific user.
+
+        Args:
+            user_id: User ID to get custom exercises for
+
+        Returns:
+            List of custom exercise dictionaries
+        """
+        try:
+            custom_doc = self.db.get(f"custom_exercises_{user_id}")
+            if custom_doc and "exercises" in custom_doc:
+                return custom_doc["exercises"]
+            return []
+        except couchdb.http.ResourceNotFound:
+            logger.info(f"No custom exercises found for user {user_id}")
+            return []
+        except Exception as e:
+            logger.error(f"Error getting custom exercises: {str(e)}")
+            return []

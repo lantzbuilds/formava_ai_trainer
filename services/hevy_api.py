@@ -1,9 +1,10 @@
 import json
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import requests
 
+from models.exercise import Exercise, ExerciseList
 from utils.crypto import decrypt_api_key
 
 
@@ -16,10 +17,11 @@ class HevyAPI:
         if not self.api_key:
             raise ValueError("Invalid or missing Hevy API key")
 
-        self.base_url = "https://api.hevyapp.com"
+        self.base_url = "https://api.hevyapp.com/v1"
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
+            "api-key": self.api_key,
         }
 
     def get_workouts(
@@ -56,6 +58,53 @@ class HevyAPI:
             print(f"Error fetching workouts: {e}")
             return []
 
+    def get_workout_count(self) -> int:
+        """
+        Get the total count of workouts.
+
+        Returns:
+            Total number of workouts
+        """
+        url = f"{self.base_url}/workouts/count"
+
+        try:
+            response = requests.get(url, headers=self.headers)
+            response.raise_for_status()
+            return response.json().get("count", 0)
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching workout count: {e}")
+            return 0
+
+    def get_workout_events(
+        self, since_date: Optional[datetime] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get workout events since a given date.
+
+        Args:
+            since_date: Date to get events since (default: 30 days ago)
+
+        Returns:
+            List of workout event dictionaries
+        """
+        if not since_date:
+            since_date = datetime.utcnow() - timedelta(days=30)
+
+        # Format date for API
+        since_str = since_date.isoformat()
+
+        # Make API request
+        url = f"{self.base_url}/workouts/events"
+        params = {"since": since_str}
+
+        try:
+            response = requests.get(url, headers=self.headers, params=params)
+            response.raise_for_status()
+            return response.json().get("events", [])
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching workout events: {e}")
+            return []
+
     def get_workout_details(self, workout_id: str) -> Optional[Dict[str, Any]]:
         """
         Get detailed information about a specific workout.
@@ -76,6 +125,289 @@ class HevyAPI:
             print(f"Error fetching workout details: {e}")
             return None
 
+    def update_workout(self, workout_id: str, workout_data: Dict[str, Any]) -> bool:
+        """
+        Update an existing workout.
+
+        Args:
+            workout_id: ID of the workout to update
+            workout_data: Updated workout data
+
+        Returns:
+            True if successful, False otherwise
+        """
+        url = f"{self.base_url}/workouts/{workout_id}"
+
+        try:
+            response = requests.put(url, headers=self.headers, json=workout_data)
+            response.raise_for_status()
+            return True
+        except requests.exceptions.RequestException as e:
+            print(f"Error updating workout: {e}")
+            return False
+
+    def create_workout(self, workout_data: Dict[str, Any]) -> Optional[str]:
+        """
+        Create a new workout.
+
+        Args:
+            workout_data: Workout data to create
+
+        Returns:
+            ID of the created workout or None if failed
+        """
+        url = f"{self.base_url}/workouts"
+
+        try:
+            response = requests.post(url, headers=self.headers, json=workout_data)
+            response.raise_for_status()
+            return response.json().get("id")
+        except requests.exceptions.RequestException as e:
+            print(f"Error creating workout: {e}")
+            return None
+
+    def get_routines(self) -> List[Dict[str, Any]]:
+        """
+        Get all routines.
+
+        Returns:
+            List of routine dictionaries
+        """
+        url = f"{self.base_url}/routines"
+
+        try:
+            response = requests.get(url, headers=self.headers)
+            response.raise_for_status()
+            return response.json().get("routines", [])
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching routines: {e}")
+            return []
+
+    def create_routine(self, routine_data: Dict[str, Any]) -> Optional[str]:
+        """
+        Create a new routine.
+
+        Args:
+            routine_data: Routine data to create
+
+        Returns:
+            ID of the created routine or None if failed
+        """
+        url = f"{self.base_url}/routines"
+
+        try:
+            response = requests.post(url, headers=self.headers, json=routine_data)
+            response.raise_for_status()
+            return response.json().get("id")
+        except requests.exceptions.RequestException as e:
+            print(f"Error creating routine: {e}")
+            return None
+
+    def update_routine(self, routine_id: str, routine_data: Dict[str, Any]) -> bool:
+        """
+        Update an existing routine.
+
+        Args:
+            routine_id: ID of the routine to update
+            routine_data: Updated routine data
+
+        Returns:
+            True if successful, False otherwise
+        """
+        url = f"{self.base_url}/routines/{routine_id}"
+
+        try:
+            response = requests.put(url, headers=self.headers, json=routine_data)
+            response.raise_for_status()
+            return True
+        except requests.exceptions.RequestException as e:
+            print(f"Error updating routine: {e}")
+            return False
+
+    def get_exercises(
+        self, page: int = 1, page_size: int = 100, include_custom: bool = False
+    ) -> ExerciseList:
+        """
+        Get exercises from Hevy API.
+
+        Args:
+            page: Page number to retrieve
+            page_size: Number of exercises per page
+            include_custom: Whether to include custom exercises
+
+        Returns:
+            ExerciseList object containing exercises from the requested page
+        """
+        url = f"{self.base_url}/exercise_templates"
+        params = {"page": page, "pageSize": page_size}
+
+        if include_custom:
+            params["includeCustom"] = "true"
+
+        try:
+            response = requests.get(url, headers=self.headers, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            # Extract exercise templates
+            exercise_templates = data.get("exercise_templates", [])
+
+            # Convert to our Exercise model format
+            exercises_data = []
+            for template in exercise_templates:
+                # Create muscle groups
+                muscle_groups = []
+                if "primary_muscle_group" in template:
+                    muscle_groups.append(
+                        {
+                            "id": template["primary_muscle_group"],
+                            "name": template["primary_muscle_group"],
+                            "is_primary": True,
+                        }
+                    )
+
+                for muscle in template.get("secondary_muscle_groups", []):
+                    muscle_groups.append(
+                        {"id": muscle, "name": muscle, "is_primary": False}
+                    )
+
+                # Create equipment
+                equipment = []
+                if "equipment" in template and template["equipment"] != "none":
+                    equipment.append(
+                        {"id": template["equipment"], "name": template["equipment"]}
+                    )
+
+                # Create exercise data
+                exercise_data = {
+                    "id": template.get("id", ""),
+                    "name": template.get("title", ""),
+                    "description": "",
+                    "instructions": "",
+                    "muscle_groups": muscle_groups,
+                    "equipment": equipment,
+                    "categories": [],
+                    "difficulty": "",
+                    "is_custom": template.get("is_custom", False),
+                    "created_at": "",
+                    "updated_at": "",
+                }
+
+                exercises_data.append(exercise_data)
+
+            updated_at = datetime.utcnow().isoformat()
+            return ExerciseList.from_hevy_api(exercises_data, updated_at)
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching exercises: {e}")
+            return ExerciseList()
+
+    def get_exercise_details(self, exercise_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get detailed information about a specific exercise.
+
+        Args:
+            exercise_id: ID of the exercise to retrieve
+
+        Returns:
+            Exercise details dictionary or None if not found
+        """
+        url = f"{self.base_url}/exercise_templates/{exercise_id}"
+
+        try:
+            response = requests.get(url, headers=self.headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching exercise details: {e}")
+            return None
+
+    def get_routine_folders(self) -> List[Dict[str, Any]]:
+        """
+        Get all routine folders.
+
+        Returns:
+            List of routine folder dictionaries
+        """
+        url = f"{self.base_url}/routine_folders"
+
+        try:
+            response = requests.get(url, headers=self.headers)
+            response.raise_for_status()
+            return response.json().get("folders", [])
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching routine folders: {e}")
+            return []
+
+    def create_routine_folder(self, folder_data: Dict[str, Any]) -> Optional[str]:
+        """
+        Create a new routine folder.
+
+        Args:
+            folder_data: Folder data to create
+
+        Returns:
+            ID of the created folder or None if failed
+        """
+        url = f"{self.base_url}/routine_folders"
+
+        try:
+            response = requests.post(url, headers=self.headers, json=folder_data)
+            response.raise_for_status()
+            return response.json().get("id")
+        except requests.exceptions.RequestException as e:
+            print(f"Error creating routine folder: {e}")
+            return None
+
+    def get_routine_folder(self, folder_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get details of a specific routine folder.
+
+        Args:
+            folder_id: ID of the folder to retrieve
+
+        Returns:
+            Folder details dictionary or None if not found
+        """
+        url = f"{self.base_url}/routine_folders/{folder_id}"
+
+        try:
+            response = requests.get(url, headers=self.headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching routine folder: {e}")
+            return None
+
+    def get_all_exercises(
+        self, max_pages: int = 10, include_custom: bool = False
+    ) -> ExerciseList:
+        """
+        Get all available exercises from Hevy API by fetching all pages.
+
+        Args:
+            max_pages: Maximum number of pages to fetch
+            include_custom: Whether to include custom exercises
+
+        Returns:
+            ExerciseList object containing all exercises
+        """
+        all_exercises = []
+        page = 1
+
+        while page <= max_pages:
+            exercise_list = self.get_exercises(
+                page=page, page_size=100, include_custom=include_custom
+            )
+            if not exercise_list.exercises:
+                break
+
+            all_exercises.extend(exercise_list.exercises)
+            page += 1
+
+        return ExerciseList(
+            exercises=all_exercises, updated_at=datetime.utcnow().isoformat()
+        )
+
     def sync_workouts(self, db, user_id: str) -> int:
         """
         Sync workouts from Hevy to the local database.
@@ -90,6 +422,35 @@ class HevyAPI:
         workouts = self.get_workouts()
         synced_count = 0
 
+        # First, sync all available base exercises (only once)
+        base_exercise_list = self.get_all_exercises(include_custom=False)
+        if base_exercise_list.exercises:
+            # Convert to dictionary format for database storage
+            exercises_data = [
+                exercise.model_dump() for exercise in base_exercise_list.exercises
+            ]
+            db.save_exercises(exercises_data)  # No user_id for base exercises
+            print(f"Synced {len(base_exercise_list.exercises)} base exercises")
+
+        # Then, sync user's custom exercises
+        custom_exercise_list = self.get_all_exercises(include_custom=True)
+        if custom_exercise_list.exercises:
+            # Filter to only include custom exercises
+            custom_exercises = [
+                exercise
+                for exercise in custom_exercise_list.exercises
+                if exercise.is_custom
+            ]
+            if custom_exercises:
+                # Convert to dictionary format for database storage
+                exercises_data = [
+                    exercise.model_dump() for exercise in custom_exercises
+                ]
+                db.save_exercises(exercises_data, user_id=user_id)
+                print(
+                    f"Synced {len(custom_exercises)} custom exercises for user {user_id}"
+                )
+
         for workout in workouts:
             # Check if workout already exists
             existing = db.get_workout_by_hevy_id(workout["id"])
@@ -97,36 +458,24 @@ class HevyAPI:
                 # Get full workout details
                 details = self.get_workout_details(workout["id"])
 
-                # Convert to our workout format
-                converted_workout = {
-                    "id": f"hevy_{workout['id']}",
-                    "user_id": user_id,
-                    "title": details.get("name", "Hevy Workout"),
-                    "description": details.get("notes", ""),
-                    "start_time": details["start_time"],
-                    "end_time": details["end_time"],
-                    "exercises": [
-                        {
-                            "index": i,
-                            "title": ex["name"],
-                            "exercise_template_id": f"hevy_{ex['exercise_id']}",
-                            "sets": [
-                                {
-                                    "index": j,
-                                    "type": "normal",
-                                    "weight_kg": s["weight"],
-                                    "reps": s["reps"],
-                                    "rpe": s.get("rpe"),
-                                }
-                                for j, s in enumerate(ex["sets"])
-                            ],
-                        }
-                        for i, ex in enumerate(details["exercises"])
-                    ],
-                }
+                if details:
+                    # Convert to our workout format
+                    workout_data = {
+                        "hevy_id": details["id"],
+                        "user_id": user_id,
+                        "title": details.get("title", "Untitled Workout"),
+                        "description": details.get("description", ""),
+                        "start_time": details.get("start_time"),
+                        "end_time": details.get("end_time"),
+                        "updated_at": details.get("updated_at"),
+                        "created_at": details.get("created_at"),
+                        "exercises": details.get("exercises", []),
+                        "exercise_count": len(details.get("exercises", [])),
+                        "last_synced": datetime.utcnow().isoformat(),
+                    }
 
-                # Save to database
-                db.save_document(converted_workout)
-                synced_count += 1
+                    # Save to database
+                    db.save_workout(workout_data)
+                    synced_count += 1
 
         return synced_count

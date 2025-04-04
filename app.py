@@ -18,6 +18,7 @@ from pages.dashboard import dashboard_page
 from pages.login import login_page
 from pages.profile import profile_page
 from pages.register import register_page
+from pages.routines import routines_page
 from pages.sync_hevy import sync_hevy_page
 from pages.workout_history import workout_history_page
 from pages.workout_preferences import workout_preferences_page
@@ -43,70 +44,86 @@ load_dotenv()
 # Initialize database connection
 db = Database()
 
+# Configure Streamlit page
+st.set_page_config(
+    page_title="AI Personal Trainer",
+    page_icon="💪",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
-# Sidebar navigation
+# Initialize session state for user authentication
+if "user_id" not in st.session_state:
+    st.session_state.user_id = None
+if "username" not in st.session_state:
+    st.session_state.username = None
+
+
 def sidebar():
-    if st.session_state.user_id:
-        # User is logged in
-        st.sidebar.write(f"Welcome, {st.session_state.username}!")
-        page = st.sidebar.radio(
-            "Navigation",
-            [
-                "Dashboard",
-                "Workout History",
-                "AI Recommendations",
-                "Sync Hevy",
-                "Workout Preferences",
-                "Profile",
-            ],
-        )
-        if st.sidebar.button("Logout"):
-            st.session_state.user_id = None
-            st.session_state.username = None
-            st.rerun()
-    else:
-        # User is not logged in
-        page = st.sidebar.radio(
-            "Navigation",
-            ["Login", "Register"],
-        )
-    return page
+    """
+    Render the sidebar navigation.
+    """
+    with st.sidebar:
+        st.title("AI Personal Trainer")
+
+        # Check if user is logged in
+        if "user_id" in st.session_state:
+            # Navigation options for logged-in users
+            selected = st.radio(
+                "Navigation",
+                [
+                    "Dashboard",
+                    "Workout History",
+                    "AI Recommendations",
+                    "Routines",
+                    "Sync Hevy",
+                    "Profile",
+                    "Logout",
+                ],
+            )
+
+            # Handle navigation
+            if selected == "Dashboard":
+                dashboard_page()
+            elif selected == "Workout History":
+                workout_history_page()
+            elif selected == "AI Recommendations":
+                ai_recommendations_page()
+            elif selected == "Routines":
+                routines_page()
+            elif selected == "Sync Hevy":
+                sync_hevy_page()
+            elif selected == "Profile":
+                profile_page()
+            elif selected == "Logout":
+                # Clear session state
+                for key in list(st.session_state.keys()):
+                    del st.session_state[key]
+                st.experimental_rerun()
+        else:
+            # Navigation options for non-logged-in users
+            selected = st.radio(
+                "Navigation",
+                ["Login", "Register"],
+            )
+
+            # Handle navigation
+            if selected == "Login":
+                login_page()
+            elif selected == "Register":
+                register_page()
 
 
-# Main app
 def main():
-    # Configure the page
-    st.set_page_config(
-        page_title="AI Personal Trainer",
-        page_icon="💪",
-        layout="wide",
-    )
+    """
+    Main application function.
+    """
+    # Initialize session state for page navigation
+    if "page" not in st.session_state:
+        st.session_state.page = "dashboard"
 
-    # Initialize session state
-    if "user_id" not in st.session_state:
-        st.session_state.user_id = None
-    if "username" not in st.session_state:
-        st.session_state.username = None
-
-    page = sidebar()
-
-    # Display the selected page
-    if page == "Login":
-        login_page()
-    elif page == "Register":
-        register_page()
-    elif page == "Dashboard":
-        dashboard_page()
-    elif page == "Workout History":
-        workout_history_page()
-    elif page == "AI Recommendations":
-        ai_recommendations_page()
-    elif page == "Profile":
-        profile_page()
-    elif page == "Sync Hevy":
-        sync_hevy_page()
-    elif page == "Workout Preferences":
-        workout_preferences_page()
+    # Render the sidebar
+    sidebar()
 
 
 if __name__ == "__main__":

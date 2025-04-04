@@ -40,6 +40,9 @@ def ai_recommendations_page():
         st.session_state.user_id, start_date, end_date
     )
 
+    # Get available exercises
+    exercises = db.get_exercises()
+
     # Display user's profile summary
     st.subheader("Your Profile Summary")
     col1, col2 = st.columns(2)
@@ -70,8 +73,39 @@ def ai_recommendations_page():
     else:
         st.write("**No workouts recorded in the last 30 days**")
 
+    # Display available exercises summary
+    st.subheader("Available Exercises")
+    if exercises:
+        st.write(f"**Total exercises available:** {len(exercises)}")
+
+        # Group exercises by muscle group
+        muscle_groups = {}
+        for exercise in exercises:
+            for muscle in exercise.get("muscle_groups", []):
+                muscle_name = muscle.get("name", "Unknown")
+                if muscle_name not in muscle_groups:
+                    muscle_groups[muscle_name] = []
+                muscle_groups[muscle_name].append(exercise.get("name", "Unknown"))
+
+        # Display muscle groups and exercise counts
+        st.write("**Exercises by muscle group:**")
+        for muscle, exercise_list in muscle_groups.items():
+            st.write(f"- {muscle}: {len(exercise_list)} exercises")
+    else:
+        st.write(
+            "**No exercises available. Please sync with Hevy to get exercise data.**"
+        )
+
     # Generate AI recommendations
     st.subheader("AI Recommendations")
+
+    # Cardio recommendation options
+    cardio_option = st.radio(
+        "Cardio Recommendations",
+        ["Include in workout routines", "Recommend separately"],
+        help="Choose whether cardio should be included in workout routines or recommended separately",
+    )
+
     if st.button("Generate Recommendations"):
         with st.spinner("Generating personalized recommendations..."):
             try:
@@ -79,6 +113,8 @@ def ai_recommendations_page():
                 context = {
                     "user_profile": user.model_dump(),
                     "recent_workouts": workouts,
+                    "available_exercises": exercises,
+                    "cardio_option": cardio_option,
                 }
 
                 # Get recommendations from OpenAI
@@ -86,7 +122,23 @@ def ai_recommendations_page():
 
                 # Display recommendations
                 st.write("### Personalized Workout Plan")
-                st.write(recommendations)
+
+                # Check if recommendations contain separate cardio section
+                if (
+                    isinstance(recommendations, dict)
+                    and "cardio_recommendations" in recommendations
+                ):
+                    # Display workout routine
+                    if "workout_routine" in recommendations:
+                        st.write("#### Workout Routine")
+                        st.write(recommendations["workout_routine"])
+
+                    # Display cardio recommendations separately
+                    st.write("#### Cardio Recommendations")
+                    st.write(recommendations["cardio_recommendations"])
+                else:
+                    # Display combined recommendations
+                    st.write(recommendations)
 
                 # Save recommendations to database
                 db.save_ai_recommendations(
@@ -101,5 +153,5 @@ def ai_recommendations_page():
                 st.error(f"Failed to generate recommendations: {str(e)}")
     else:
         st.info(
-            "Click the button above to generate personalized workout recommendations."
+            "Click the button above to generate personalized workout recommendations based on your profile and workout history."
         )
