@@ -9,6 +9,11 @@ openai = "*"
 requests = "*"
 pydantic = "*"
 couchdb = "*"
+streamlit = "*"
+plotly = "*"
+pandas = "*"
+numpy = "*"
+bcrypt = "*"
 
 [dev-packages]
 black = "*"
@@ -16,4 +21,4 @@ pylint = "*"
 pytest = "*"
 
 [requires]
-python_version = "3.9" 
+python_version = "3.11" 

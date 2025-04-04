@@ -2,6 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import List, Optional
 
+import bcrypt
 from pydantic import BaseModel, EmailStr, Field, SecretStr
 
 
@@ -33,22 +34,22 @@ class Injury(BaseModel):
 
 
 class UserProfile(BaseModel):
-    id: str
+    id: str = Field(default_factory=lambda: f"user_{datetime.utcnow().timestamp()}")
     username: str
     email: EmailStr
-    password_hash: SecretStr
+    password_hash: str  # Will store bcrypt hash
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
     # Hevy API Integration
-    hevy_api_key: Optional[SecretStr] = None
+    hevy_api_key: Optional[str] = None
     hevy_api_key_updated_at: Optional[datetime] = None
 
     # Physical Characteristics
-    height_cm: Optional[float] = None
-    weight_kg: Optional[float] = None
-    sex: Optional[Sex] = None
-    age: Optional[int] = Field(None, ge=13, le=120)
+    height_cm: float
+    weight_kg: float
+    sex: Sex
+    age: int
 
     # Fitness Information
     fitness_goals: List[FitnessGoal] = []
@@ -59,13 +60,34 @@ class UserProfile(BaseModel):
     preferred_workout_time: Optional[str] = (
         None  # e.g., "morning", "afternoon", "evening"
     )
-    experience_level: Optional[str] = (
-        None  # e.g., "beginner", "intermediate", "advanced"
-    )
+    experience_level: str  # beginner, intermediate, advanced
     notes: Optional[str] = None
 
     # CouchDB specific
     _rev: Optional[str] = None
+
+    @classmethod
+    def create_user(
+        cls, username: str, email: str, password: str, **kwargs
+    ) -> "UserProfile":
+        """Create a new user with a hashed password."""
+        # Generate a salt and hash the password
+        salt = bcrypt.gensalt()
+        password_hash = bcrypt.hashpw(password.encode("utf-8"), salt)
+
+        # Create the user profile with the hashed password
+        return cls(
+            username=username,
+            email=email,
+            password_hash=password_hash.decode("utf-8"),  # Store as string in DB
+            **kwargs,
+        )
+
+    def verify_password(self, password: str) -> bool:
+        """Verify a password against the stored hash."""
+        return bcrypt.checkpw(
+            password.encode("utf-8"), self.password_hash.encode("utf-8")
+        )
 
     class Config:
         json_encoders = {datetime: lambda v: v.isoformat()}
