@@ -5,7 +5,7 @@ services:
     ports:
       - "5984:5984"
     environment:
-      - COUCHDB_USER=dedalus2
+      - COUCHDB_USERNAME=dedalus2
       - COUCHDB_PASSWORD=s0NLyO/!XMx%%IVE
     volumes:
       - couchdb_data:/opt/couchdb/data

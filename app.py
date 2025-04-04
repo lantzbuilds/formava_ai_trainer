@@ -8,7 +8,7 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from config.database import Database
-from models.user import FitnessGoal, Injury, Sex, UserProfile
+from models.user import FitnessGoal, Injury, InjurySeverity, Sex, UserProfile
 from services.hevy_api import HevyAPI
 from services.openai_service import OpenAIService
 from utils.crypto import decrypt_api_key, encrypt_api_key
@@ -248,8 +248,15 @@ def register_page():
             st.error("Passwords do not match")
         else:
             try:
+                # Check if username already exists
+                if db.username_exists(username):
+                    st.error(
+                        "Username already exists. Please choose a different username."
+                    )
+                    return
+
                 logger.info(f"Creating new user: {username}")
-                # Create new user with hashed password
+                # Create new user
                 new_user = UserProfile.create_user(
                     username=username,
                     email=email,
@@ -260,16 +267,18 @@ def register_page():
                     age=age,
                     fitness_goals=[FitnessGoal(g) for g in goals],
                     experience_level=experience,
-                    hevy_api_key=encrypted_key,
+                    hevy_api_key=encrypted_key if hevy_api_key else None,
                     injuries=st.session_state.injuries,
                 )
 
                 logger.info(f"User object created successfully. Type: {new_user.type}")
-                logger.debug(f"User object: {new_user.dict()}")
+                logger.debug(f"User object: {new_user.model_dump()}")
 
                 # Save to database
                 logger.info("Saving user to database...")
-                doc_id, doc_rev = db.save_document(new_user.dict())
+                # Ensure all datetime objects are serialized
+                user_dict = new_user.model_dump()
+                doc_id, doc_rev = db.save_document(user_dict)
                 logger.info(f"User saved successfully. ID: {doc_id}, Rev: {doc_rev}")
 
                 st.success(f"Registration successful! Welcome, {username}!")
@@ -460,14 +469,25 @@ def profile_page():
             )
 
             if st.form_submit_button("Update Profile"):
-                user_doc["height_cm"] = new_height_cm
-                user_doc["weight_kg"] = new_weight_kg
-                user_doc["fitness_goals"] = new_goals
-                user_doc["updated_at"] = datetime.utcnow().isoformat()
+                try:
+                    # Update user profile
+                    user_doc["height_cm"] = new_height_cm
+                    user_doc["weight_kg"] = new_weight_kg
+                    user_doc["fitness_goals"] = new_goals
+                    user_doc["experience_level"] = experience
+                    user_doc["updated_at"] = datetime.utcnow().isoformat()
+                    if new_key:
+                        user_doc["hevy_api_key"] = encrypt_api_key(new_key)
 
-                db.update_document(user_doc)
-                st.success("Profile updated successfully!")
-                st.rerun()
+                    # Save to database
+                    doc_id, doc_rev = db.save_document(user_doc)
+                    logging.info(f"Updated user profile with ID: {doc_id}")
+
+                    st.success("Profile updated successfully!")
+                    st.rerun()
+                except Exception as e:
+                    logging.error(f"Error updating profile: {str(e)}")
+                    st.error(f"Failed to update profile: {str(e)}")
     else:
         st.error("User profile not found.")
 

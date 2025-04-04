@@ -1,9 +1,27 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import List, Optional
 
 import bcrypt
 from pydantic import BaseModel, EmailStr, Field, SecretStr
+
+
+class InjurySeverity(str, Enum):
+    MILD = "mild"
+    MODERATE = "moderate"
+    SEVERE = "severe"
+
+
+class Injury(BaseModel):
+    description: str
+    body_part: str
+    severity: InjurySeverity
+    date_injured: datetime
+    is_active: bool = True
+    notes: Optional[str] = None
+
+    class Config:
+        json_encoders = {datetime: lambda v: v.isoformat()}
 
 
 class Sex(str, Enum):
@@ -24,59 +42,16 @@ class FitnessGoal(str, Enum):
     REHABILITATION = "rehabilitation"
 
 
-class InjurySeverity(Enum):
-    MILD = "mild"
-    MODERATE = "moderate"
-    SEVERE = "severe"
-
-
-class Injury:
-    def __init__(
-        self,
-        description: str,
-        body_part: str,
-        severity: InjurySeverity,
-        date_injured: datetime,
-        is_active: bool = True,
-        notes: Optional[str] = None,
-    ):
-        self.description = description
-        self.body_part = body_part
-        self.severity = severity
-        self.date_injured = date_injured
-        self.is_active = is_active
-        self.notes = notes
-
-    def to_dict(self) -> dict:
-        return {
-            "description": self.description,
-            "body_part": self.body_part,
-            "severity": self.severity.value,
-            "date_injured": self.date_injured.isoformat(),
-            "is_active": self.is_active,
-            "notes": self.notes,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "Injury":
-        return cls(
-            description=data["description"],
-            body_part=data["body_part"],
-            severity=InjurySeverity(data["severity"]),
-            date_injured=datetime.fromisoformat(data["date_injured"]),
-            is_active=data["is_active"],
-            notes=data.get("notes"),
-        )
-
-
 class UserProfile(BaseModel):
-    id: str = Field(default_factory=lambda: f"user_{datetime.utcnow().timestamp()}")
+    id: str = Field(
+        default_factory=lambda: f"user_{datetime.now(timezone.utc).timestamp()}"
+    )
     type: str = "user_profile"  # Add this field to identify user documents
     username: str
     email: EmailStr
     password_hash: str  # Will store bcrypt hash
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     # Hevy API Integration
     hevy_api_key: Optional[str] = None
@@ -90,7 +65,7 @@ class UserProfile(BaseModel):
 
     # Fitness Information
     fitness_goals: List[FitnessGoal] = []
-    injuries: List[Injury] = []
+    injuries: List[Injury] = Field(default_factory=list)
 
     # Additional Information
     preferred_workout_days: List[str] = []  # e.g., ["Monday", "Wednesday", "Friday"]
@@ -103,21 +78,55 @@ class UserProfile(BaseModel):
     # CouchDB specific
     _rev: Optional[str] = None
 
+    def model_dump(self, *args, **kwargs):
+        """Override model_dump method to ensure datetime serialization."""
+        d = super().model_dump(*args, **kwargs)
+        # Convert any remaining datetime objects to ISO format strings
+        for key, value in d.items():
+            if isinstance(value, datetime):
+                d[key] = value.isoformat()
+            elif isinstance(value, list):
+                for i, item in enumerate(value):
+                    if isinstance(item, datetime):
+                        d[key][i] = item.isoformat()
+                    elif isinstance(item, dict):
+                        for k, v in item.items():
+                            if isinstance(v, datetime):
+                                d[key][i][k] = v.isoformat()
+        return d
+
     @classmethod
     def create_user(
-        cls, username: str, email: str, password: str, **kwargs
+        cls,
+        username: str,
+        email: str,
+        password: str,
+        height_cm: float,
+        weight_kg: float,
+        sex: Sex,
+        age: int,
+        fitness_goals: List[FitnessGoal],
+        experience_level: str,
+        hevy_api_key: Optional[str] = None,
+        injuries: Optional[List[dict]] = None,
     ) -> "UserProfile":
         """Create a new user with a hashed password."""
         # Generate a salt and hash the password
         salt = bcrypt.gensalt()
         password_hash = bcrypt.hashpw(password.encode("utf-8"), salt)
 
-        # Create the user profile with the hashed password
         return cls(
             username=username,
             email=email,
             password_hash=password_hash.decode("utf-8"),  # Store as string in DB
-            **kwargs,
+            height_cm=height_cm,
+            weight_kg=weight_kg,
+            sex=sex,
+            age=age,
+            fitness_goals=fitness_goals,
+            experience_level=experience_level,
+            hevy_api_key=hevy_api_key,
+            injuries=[Injury(**injury) for injury in (injuries or [])],
         )
 
     def verify_password(self, password: str) -> bool:
@@ -127,14 +136,8 @@ class UserProfile(BaseModel):
         )
 
     def to_dict(self) -> dict:
-        return {
-            "username": self.username,
-            "email": self.email,
-            "password_hash": self.password_hash,
-            "injuries": [injury.to_dict() for injury in self.injuries],
-            "hevy_api_key": self.hevy_api_key,
-            "type": self.type,
-        }
+        """Convert to dictionary with proper datetime serialization."""
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict) -> "UserProfile":

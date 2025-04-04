@@ -1,5 +1,6 @@
 import base64
 import os
+from pathlib import Path
 
 from cryptography.fernet import Fernet
 from dotenv import load_dotenv
@@ -7,34 +8,55 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+# Path to store the encryption key if not in .env
+KEY_FILE = Path(".encryption_key")
 
-# Get encryption key from environment or generate a new one
+
 def get_or_create_key():
     """Get the encryption key from environment or generate a new one."""
+    # First try to get from environment
     key = os.getenv("ENCRYPTION_KEY")
+
+    # If not in environment, try to read from file
+    if not key and KEY_FILE.exists():
+        key = KEY_FILE.read_text().strip()
+
+    # If still no key, generate a new one
     if not key:
-        # Generate a new key
         key = Fernet.generate_key().decode()
-        print("WARNING: No ENCRYPTION_KEY found in .env. Generated a new one.")
-        print("Please add this to your .env file:")
+        # Save to file
+        KEY_FILE.write_text(key)
+        print(
+            "WARNING: No ENCRYPTION_KEY found. Generated a new one and saved to .encryption_key"
+        )
+        print("For production use, please add this to your .env file:")
         print(f"ENCRYPTION_KEY={key}")
-        return key
-    else:
-        # Ensure the key is properly formatted
-        try:
-            # Try to decode and re-encode to ensure it's valid
-            key_bytes = base64.urlsafe_b64decode(key)
-            if len(key_bytes) != 32:
-                raise ValueError("Key must be 32 bytes")
-            # Re-encode the key to ensure it's in the correct format
-            return base64.urlsafe_b64encode(key_bytes).decode()
-        except Exception as e:
-            print(f"Invalid ENCRYPTION_KEY format: {e}")
-            # Generate a new key if the existing one is invalid
-            new_key = Fernet.generate_key().decode()
-            print("Generated a new key. Please update your .env file:")
-            print(f"ENCRYPTION_KEY={new_key}")
-            return new_key
+
+    # Validate and format the key
+    try:
+        # Try to decode and re-encode to ensure it's valid
+        key_bytes = base64.urlsafe_b64decode(key)
+        if len(key_bytes) != 32:
+            raise ValueError("Key must be 32 bytes")
+        # Re-encode the key to ensure it's in the correct format
+        formatted_key = base64.urlsafe_b64encode(key_bytes).decode()
+
+        # If the key was different from what we have, update it
+        if formatted_key != key:
+            if not os.getenv("ENCRYPTION_KEY"):
+                KEY_FILE.write_text(formatted_key)
+            print("Note: Encryption key has been reformatted to ensure proper encoding")
+
+        return formatted_key
+    except Exception as e:
+        print(f"Invalid ENCRYPTION_KEY format: {e}")
+        # Generate a new key if the existing one is invalid
+        new_key = Fernet.generate_key().decode()
+        if not os.getenv("ENCRYPTION_KEY"):
+            KEY_FILE.write_text(new_key)
+        print("Generated a new key. For production use, please add to your .env file:")
+        print(f"ENCRYPTION_KEY={new_key}")
+        return new_key
 
 
 # Initialize Fernet with the key

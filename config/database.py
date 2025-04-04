@@ -1,73 +1,167 @@
+import json
 import logging
 import os
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import couchdb
 from dotenv import load_dotenv
 
 from .views import create_user_views, create_workout_views
 
+# Load environment variables
+load_dotenv()
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-load_dotenv()
-
 
 class Database:
     def __init__(self):
-        # Get CouchDB configuration from environment variables
-        couchdb_url = os.getenv("COUCHDB_URL", "http://localhost:5984")
-        username = os.getenv("COUCHDB_USERNAME", "admin")
-        password = os.getenv("COUCHDB_PASSWORD", "password")
+        """Initialize the database connection."""
+        self.couchdb_url = os.getenv("COUCHDB_URL", "http://localhost:5984")
+        self.couchdb_user = os.getenv("COUCHDB_USERNAME", "admin")
+        self.couchdb_password = os.getenv("COUCHDB_PASSWORD", "password")
+        self.db_name = os.getenv("COUCHDB_DB", "ai_personal_trainer")
+        self.db = None
+        self.connect()
 
-        logger.info(f"Connecting to CouchDB at {couchdb_url}")
-
-        # Create server with authentication
-        self.server = couchdb.Server(couchdb_url)
-        self.server.resource.credentials = (username, password)
-
-        # Initialize database
-        self.db_name = os.getenv("COUCHDB_DATABASE", "ai_personal_trainer")
+    def connect(self):
+        """Connect to the CouchDB server and get or create the database."""
         try:
-            self.db = self.server[self.db_name]
-            logger.info(f"Connected to existing database: {self.db_name}")
-        except couchdb.http.ResourceNotFound:
-            self.db = self.server.create(self.db_name)
-            logger.info(f"Created new database: {self.db_name}")
+            logger.info(f"Connecting to CouchDB at {self.couchdb_url}")
 
-        # Initialize views
-        self._init_views()
+            # Create server with authentication
+            self.server = couchdb.Server(self.couchdb_url)
 
-    def _init_views(self):
-        """Initialize CouchDB views."""
-        try:
-            # Try to create workout views
-            create_workout_views(self.db)
-            # Try to create user views
-            create_user_views(self.db)
-        except couchdb.http.ResourceConflict:
-            # If views already exist, that's fine - we can continue
-            print("Views already exist in the database")
+            # Set credentials if provided
+            if self.couchdb_user and self.couchdb_password:
+                self.server.resource.credentials = (
+                    self.couchdb_user,
+                    self.couchdb_password,
+                )
+                logger.info(f"Using authentication with user: {self.couchdb_user}")
+            else:
+                logger.warning(
+                    "No CouchDB credentials provided. Using anonymous access."
+                )
+
+            # Check if database exists, create if not
+            try:
+                if self.db_name not in self.server:
+                    logger.info(f"Database {self.db_name} does not exist. Creating...")
+                    self.db = self.server.create(self.db_name)
+                    logger.info(f"Database {self.db_name} created successfully")
+                else:
+                    logger.info(f"Database {self.db_name} already exists")
+                    self.db = self.server[self.db_name]
+            except couchdb.http.Unauthorized:
+                logger.error(
+                    "Authentication failed. Please check your CouchDB credentials."
+                )
+                # Try to connect without authentication as fallback
+                logger.info("Attempting to connect without authentication...")
+                self.server = couchdb.Server(self.couchdb_url)
+                if self.db_name not in self.server:
+                    self.db = self.server.create(self.db_name)
+                else:
+                    self.db = self.server[self.db_name]
+
+            # Create design documents if they don't exist
+            self._create_design_documents()
         except Exception as e:
-            print(f"Error creating views: {e}")
-            # Don't raise the exception - we can still use the database
-            # even if view creation fails
+            logger.error(f"Error connecting to CouchDB: {str(e)}")
+            # Create a mock database for development
+            logger.warning("Creating mock database for development")
+            self._create_mock_database()
 
-    def save_document(self, doc):
+    def _create_mock_database(self):
+        """Create a mock database for development when CouchDB is not available."""
+
+        class MockDB:
+            def __init__(self):
+                self.data = {}
+                self.counter = 0
+
+            def save(self, doc):
+                if "_id" not in doc:
+                    doc["_id"] = f"mock_{self.counter}"
+                    self.counter += 1
+                self.data[doc["_id"]] = doc
+                return doc["_id"], "1-mock"
+
+            def get(self, doc_id):
+                return self.data.get(doc_id)
+
+            def find(self, selector):
+                # Simple mock implementation
+                results = []
+                for doc_id, doc in self.data.items():
+                    match = True
+                    if "selector" in selector:
+                        for key, value in selector["selector"].items():
+                            if key not in doc or doc[key] != value:
+                                match = False
+                                break
+                    if match:
+                        results.append(doc)
+                return results
+
+        self.db = MockDB()
+        logger.info("Mock database created for development")
+
+    def _create_design_documents(self):
+        """Create necessary design documents for views."""
+        try:
+            # Check if design document exists
+            if "_design/users" not in self.db:
+                logger.info("Creating users design document")
+                self.db.save(
+                    {
+                        "_id": "_design/users",
+                        "views": {
+                            "by_username": {
+                                "map": "function(doc) { if (doc.type === 'user_profile') { emit(doc.username, doc); } }"
+                            },
+                            "by_email": {
+                                "map": "function(doc) { if (doc.type === 'user_profile') { emit(doc.email, doc); } }"
+                            },
+                        },
+                    }
+                )
+                logger.info("Users design document created successfully")
+        except Exception as e:
+            logger.error(f"Error creating design documents: {str(e)}")
+
+    def save_document(self, doc: Dict[str, Any]) -> Tuple[str, str]:
         """Save a document to the database."""
         try:
-            logger.info(f"Saving document with ID: {doc.get('_id', 'new')}")
-            logger.debug(f"Document content: {doc}")
-            result = self.db.save(doc)
-            logger.info(
-                f"Document saved successfully. ID: {result[0]}, Rev: {result[1]}"
-            )
-            return result
+            # Ensure the document is JSON serializable
+            doc = self._ensure_json_serializable(doc)
+
+            # Save the document
+            doc_id, doc_rev = self.db.save(doc)
+            logger.info(f"Document saved successfully. ID: {doc_id}, Rev: {doc_rev}")
+            return doc_id, doc_rev
         except Exception as e:
             logger.error(f"Error saving document: {str(e)}")
             raise
+
+    def _ensure_json_serializable(self, obj: Any) -> Any:
+        """Ensure an object is JSON serializable."""
+        if isinstance(obj, dict):
+            return {k: self._ensure_json_serializable(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._ensure_json_serializable(item) for item in obj]
+        elif isinstance(obj, datetime):
+            return obj.isoformat()
+        elif hasattr(obj, "model_dump"):
+            return self._ensure_json_serializable(obj.model_dump())
+        elif hasattr(obj, "dict"):
+            return self._ensure_json_serializable(obj.dict())
+        else:
+            return obj
 
     def get_document(self, doc_id):
         """Retrieve a document by ID."""
@@ -163,14 +257,31 @@ class Database:
         ]
 
     # User Profile Methods
-    def get_user_by_username(self, username: str):
-        """Get user profile by username."""
+    def get_user_by_username(self, username: str) -> Optional[dict]:
+        """Get a user document by username."""
         try:
-            return [
-                row.value for row in self.db.view("users/by_username", key=username)
-            ][0]
-        except IndexError:
+            # Create a Mango query to find user by username
+            selector = {"type": "user_profile", "username": username}
+            result = self.db.find(selector)
+            # Get the first (and should be only) result
+            for doc in result:
+                return doc
             return None
+        except Exception as e:
+            logging.error(f"Error getting user by username: {str(e)}")
+            return None
+
+    def username_exists(self, username: str) -> bool:
+        """Check if a username already exists."""
+        try:
+            # Create a Mango query to find user by username
+            selector = {"selector": {"type": "user_profile", "username": username}}
+            result = self.db.find(selector)
+            # If we find any documents, the username exists
+            return any(True for _ in result)
+        except Exception as e:
+            logging.error(f"Error checking username existence: {str(e)}")
+            return False
 
     def get_users_by_fitness_goal(self, goal: str):
         """Get all users with a specific fitness goal."""
