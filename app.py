@@ -10,6 +10,15 @@ from config.database import Database
 from models.user import FitnessGoal, Injury, Sex, UserProfile
 from services.hevy_api import HevyAPI
 from services.openai_service import OpenAIService
+from utils.crypto import decrypt_api_key, encrypt_api_key
+from utils.units import (
+    cm_to_inches,
+    format_height_cm,
+    format_weight_kg,
+    inches_to_cm,
+    kg_to_lbs,
+    lbs_to_kg,
+)
 
 # Load environment variables
 load_dotenv()
@@ -99,12 +108,23 @@ def register_page():
 
         col1, col2 = st.columns(2)
         with col1:
-            height = st.number_input(
-                "Height (cm)", min_value=100, max_value=250, value=170
+            # Height in feet and inches
+            height_feet = st.number_input(
+                "Height (feet)", min_value=3, max_value=8, value=5
             )
-            weight = st.number_input(
-                "Weight (kg)", min_value=30, max_value=200, value=70
+            height_inches = st.number_input(
+                "Height (inches)", min_value=0, max_value=11, value=10
             )
+            # Convert to cm for storage
+            height_cm = inches_to_cm(height_feet * 12 + height_inches)
+
+            # Weight in pounds
+            weight_lbs = st.number_input(
+                "Weight (lbs)", min_value=50, max_value=500, value=150
+            )
+            # Convert to kg for storage
+            weight_kg = lbs_to_kg(weight_lbs)
+
             sex = st.selectbox("Sex", [s.value for s in Sex])
 
         with col2:
@@ -113,6 +133,57 @@ def register_page():
                 "Experience Level", ["beginner", "intermediate", "advanced"]
             )
             goals = st.multiselect("Fitness Goals", [g.value for g in FitnessGoal])
+
+        # Hevy API Integration
+        st.subheader("Hevy API Integration (Optional)")
+        hevy_api_key = st.text_input(
+            "Hevy API Key",
+            type="password",
+            help="You can add this later in your profile",
+        )
+        if hevy_api_key:
+            # Encrypt the API key before storing
+            encrypted_key = encrypt_api_key(hevy_api_key)
+        else:
+            encrypted_key = None
+
+        # Injuries
+        st.subheader("Injuries (Optional)")
+        injuries = []
+        injury_count = st.number_input(
+            "Number of injuries to add", min_value=0, max_value=5, value=0
+        )
+
+        for i in range(injury_count):
+            with st.expander(f"Injury {i+1}"):
+                description = st.text_input(f"Description", key=f"injury_desc_{i}")
+                body_part = st.text_input(f"Body Part", key=f"injury_part_{i}")
+                severity = st.selectbox(
+                    f"Severity",
+                    ["mild", "moderate", "severe"],
+                    key=f"injury_severity_{i}",
+                )
+                date_injured = st.date_input(
+                    f"Date Injured", value=datetime.now().date(), key=f"injury_date_{i}"
+                )
+                is_active = st.checkbox(
+                    f"Currently Active", value=True, key=f"injury_active_{i}"
+                )
+                notes = st.text_area(f"Notes", key=f"injury_notes_{i}")
+
+                if description and body_part:  # Only add if required fields are filled
+                    injuries.append(
+                        {
+                            "description": description,
+                            "body_part": body_part,
+                            "severity": severity,
+                            "date_injured": datetime.combine(
+                                date_injured, datetime.min.time()
+                            ).isoformat(),
+                            "is_active": is_active,
+                            "notes": notes,
+                        }
+                    )
 
         submit = st.form_submit_button("Register")
 
@@ -126,12 +197,14 @@ def register_page():
                         username=username,
                         email=email,
                         password=password,
-                        height_cm=height,
-                        weight_kg=weight,
+                        height_cm=height_cm,
+                        weight_kg=weight_kg,
                         sex=Sex(sex),
                         age=age,
                         fitness_goals=[FitnessGoal(g) for g in goals],
                         experience_level=experience,
+                        hevy_api_key=encrypted_key,
+                        injuries=injuries,
                     )
 
                     # Save to database
@@ -252,8 +325,8 @@ def profile_page():
         with col1:
             st.write(f"**Username:** {user_doc.get('username', 'N/A')}")
             st.write(f"**Email:** {user_doc.get('email', 'N/A')}")
-            st.write(f"**Height:** {user_doc.get('height_cm', 'N/A')} cm")
-            st.write(f"**Weight:** {user_doc.get('weight_kg', 'N/A')} kg")
+            st.write(f"**Height:** {format_height_cm(user_doc.get('height_cm', 0))}")
+            st.write(f"**Weight:** {format_weight_kg(user_doc.get('weight_kg', 0))}")
 
         with col2:
             st.write(f"**Sex:** {user_doc.get('sex', 'N/A')}")
@@ -270,32 +343,49 @@ def profile_page():
             if st.button("Update Hevy API Key"):
                 new_key = st.text_input("New Hevy API Key", type="password")
                 if st.button("Save"):
-                    db.update_user_hevy_api_key(user_id, new_key)
+                    encrypted_key = encrypt_api_key(new_key)
+                    db.update_user_hevy_api_key(user_id, encrypted_key)
                     st.success("Hevy API key updated successfully!")
                     st.experimental_rerun()
         else:
             st.warning("Hevy API key is not configured")
             new_key = st.text_input("Hevy API Key", type="password")
             if st.button("Save"):
-                db.update_user_hevy_api_key(user_id, new_key)
+                encrypted_key = encrypt_api_key(new_key)
+                db.update_user_hevy_api_key(user_id, encrypted_key)
                 st.success("Hevy API key saved successfully!")
                 st.experimental_rerun()
 
         # Edit profile
         st.subheader("Edit Profile")
         with st.form("edit_profile"):
-            new_height = st.number_input(
-                "Height (cm)",
-                min_value=100,
-                max_value=250,
-                value=user_doc.get("height_cm", 170),
+            # Height in feet and inches
+            current_height_cm = user_doc.get("height_cm", 170)
+            current_height_inches = cm_to_inches(current_height_cm)
+            height_feet = st.number_input(
+                "Height (feet)",
+                min_value=3,
+                max_value=8,
+                value=int(current_height_inches // 12),
             )
-            new_weight = st.number_input(
-                "Weight (kg)",
-                min_value=30,
-                max_value=200,
-                value=user_doc.get("weight_kg", 70),
+            height_inches = st.number_input(
+                "Height (inches)",
+                min_value=0,
+                max_value=11,
+                value=int(current_height_inches % 12),
             )
+            new_height_cm = inches_to_cm(height_feet * 12 + height_inches)
+
+            # Weight in pounds
+            current_weight_kg = user_doc.get("weight_kg", 70)
+            weight_lbs = st.number_input(
+                "Weight (lbs)",
+                min_value=50,
+                max_value=500,
+                value=int(kg_to_lbs(current_weight_kg)),
+            )
+            new_weight_kg = lbs_to_kg(weight_lbs)
+
             new_goals = st.multiselect(
                 "Fitness Goals",
                 [g.value for g in FitnessGoal],
@@ -303,8 +393,8 @@ def profile_page():
             )
 
             if st.form_submit_button("Update Profile"):
-                user_doc["height_cm"] = new_height
-                user_doc["weight_kg"] = new_weight
+                user_doc["height_cm"] = new_height_cm
+                user_doc["weight_kg"] = new_weight_kg
                 user_doc["fitness_goals"] = new_goals
                 user_doc["updated_at"] = datetime.utcnow().isoformat()
 

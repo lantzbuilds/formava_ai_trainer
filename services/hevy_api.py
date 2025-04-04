@@ -4,15 +4,21 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
+from ..utils.crypto import decrypt_api_key
+
 
 class HevyAPI:
     """Service for interacting with the Hevy API."""
 
-    def __init__(self, api_key: str):
-        self.api_key = api_key
+    def __init__(self, encrypted_api_key: str):
+        """Initialize the Hevy API client with an encrypted API key."""
+        self.api_key = decrypt_api_key(encrypted_api_key)
+        if not self.api_key:
+            raise ValueError("Invalid or missing Hevy API key")
+
         self.base_url = "https://api.hevyapp.com"
         self.headers = {
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
 
@@ -35,8 +41,8 @@ class HevyAPI:
             end_date = datetime.utcnow()
 
         # Format dates for API
-        start_str = start_date.strftime("%Y-%m-%d")
-        end_str = end_date.strftime("%Y-%m-%d")
+        start_str = start_date.isoformat()
+        end_str = end_date.isoformat()
 
         # Make API request
         url = f"{self.base_url}/workouts"
@@ -86,14 +92,41 @@ class HevyAPI:
 
         for workout in workouts:
             # Check if workout already exists
-            existing_workout = db.get_document(workout["id"])
+            existing = db.get_workout_by_hevy_id(workout["id"])
+            if not existing:
+                # Get full workout details
+                details = self.get_workout_details(workout["id"])
 
-            if not existing_workout:
-                # Add user_id to workout
-                workout["user_id"] = user_id
+                # Convert to our workout format
+                converted_workout = {
+                    "id": f"hevy_{workout['id']}",
+                    "user_id": user_id,
+                    "title": details.get("name", "Hevy Workout"),
+                    "description": details.get("notes", ""),
+                    "start_time": details["start_time"],
+                    "end_time": details["end_time"],
+                    "exercises": [
+                        {
+                            "index": i,
+                            "title": ex["name"],
+                            "exercise_template_id": f"hevy_{ex['exercise_id']}",
+                            "sets": [
+                                {
+                                    "index": j,
+                                    "type": "normal",
+                                    "weight_kg": s["weight"],
+                                    "reps": s["reps"],
+                                    "rpe": s.get("rpe"),
+                                }
+                                for j, s in enumerate(ex["sets"])
+                            ],
+                        }
+                        for i, ex in enumerate(details["exercises"])
+                    ],
+                }
 
                 # Save to database
-                db.save_document(workout)
+                db.save_document(converted_workout)
                 synced_count += 1
 
         return synced_count

@@ -12,25 +12,39 @@ load_dotenv()
 
 class Database:
     def __init__(self):
-        self.server = couchdb.Server(
-            f'http://{os.getenv("COUCHDB_USER", "admin")}:{os.getenv("COUCHDB_PASSWORD", "password")}@localhost:5984/'
-        )
-        self.db = None
-        self._init_database()
-        self._init_views()
+        # Get CouchDB configuration from environment variables
+        couchdb_url = os.getenv("COUCHDB_URL", "http://localhost:5984")
+        username = os.getenv("COUCHDB_USERNAME", "admin")
+        password = os.getenv("COUCHDB_PASSWORD", "password")
 
-    def _init_database(self):
-        """Initialize the database and create it if it doesn't exist."""
-        db_name = os.getenv("COUCHDB_DATABASE", "ai_personal_trainer")
+        # Create server with authentication
+        self.server = couchdb.Server(couchdb_url)
+        self.server.resource.credentials = (username, password)
+
+        # Initialize database
+        self.db_name = os.getenv("COUCHDB_DATABASE", "ai_personal_trainer")
         try:
-            self.db = self.server[db_name]
+            self.db = self.server[self.db_name]
         except couchdb.http.ResourceNotFound:
-            self.db = self.server.create(db_name)
+            self.db = self.server.create(self.db_name)
+
+        # Initialize views
+        self._init_views()
 
     def _init_views(self):
         """Initialize CouchDB views."""
-        create_workout_views(self.db)
-        create_user_views(self.db)
+        try:
+            # Try to create workout views
+            create_workout_views(self.db)
+            # Try to create user views
+            create_user_views(self.db)
+        except couchdb.http.ResourceConflict:
+            # If views already exist, that's fine - we can continue
+            print("Views already exist in the database")
+        except Exception as e:
+            print(f"Error creating views: {e}")
+            # Don't raise the exception - we can still use the database
+            # even if view creation fails
 
     def save_document(self, doc):
         """Save a document to the database."""
