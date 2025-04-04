@@ -1,7 +1,7 @@
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import couchdb
@@ -21,7 +21,7 @@ class Database:
     def __init__(self):
         """Initialize the database connection."""
         self.couchdb_url = os.getenv("COUCHDB_URL", "http://localhost:5984")
-        self.couchdb_user = os.getenv("COUCHDB_USERNAME", "admin")
+        self.couchdb_user = os.getenv("COUCHDB_USER", "admin")
         self.couchdb_password = os.getenv("COUCHDB_PASSWORD", "password")
         self.db_name = os.getenv("COUCHDB_DB", "ai_personal_trainer")
         self.db = None
@@ -209,16 +209,21 @@ class Database:
 
         return self.db.save(design_doc)
 
-    def get_workouts_by_date_range(self, start_date: datetime, end_date: datetime):
+    def get_workouts_by_date_range(self, start_date, end_date):
         """Get workouts within a date range."""
-        start_key = start_date.isoformat()
-        end_key = end_date.isoformat()
-        return [
-            row.value
-            for row in self.db.view(
-                "workouts/by_date", startkey=start_key, endkey=end_key
-            )
-        ]
+        try:
+            return [
+                row.value
+                for row in self.db.view(
+                    "workouts/by_date",
+                    startkey=start_date.isoformat(),
+                    endkey=end_date.isoformat(),
+                )
+            ]
+        except couchdb.http.ResourceNotFound:
+            # View doesn't exist yet (no workouts have been synced)
+            logging.info("No workout history view found yet. Returning empty list.")
+            return []
 
     def get_workouts_by_exercise(self, exercise_template_id: str):
         """Get all workouts containing a specific exercise."""
@@ -258,13 +263,22 @@ class Database:
 
     # User Profile Methods
     def get_user_by_username(self, username: str) -> Optional[dict]:
-        """Get a user document by username."""
+        """Get a user by username."""
         try:
-            # Create a Mango query to find user by username
-            selector = {"type": "user_profile", "username": username}
-            result = self.db.find(selector)
-            # Get the first (and should be only) result
+            # Use Mango query to find user by username
+            query = {"selector": {"type": "user_profile", "username": username}}
+            result = self.db.find(query)
             for doc in result:
+                # Fix preferred_workout_days if it's a list
+                # TODO: Remove this once we've confirmed that the data is normalized
+                if "preferred_workout_days" in doc and isinstance(
+                    doc["preferred_workout_days"], list
+                ):
+                    # Take the first value if it's a list
+                    doc["preferred_workout_days"] = doc["preferred_workout_days"][0]
+                    logging.info(
+                        f"Converted preferred_workout_days from list to integer: {doc['preferred_workout_days']}"
+                    )
                 return doc
             return None
         except Exception as e:
@@ -274,13 +288,13 @@ class Database:
     def username_exists(self, username: str) -> bool:
         """Check if a username already exists."""
         try:
-            # Create a Mango query to find user by username
-            selector = {"selector": {"type": "user_profile", "username": username}}
-            result = self.db.find(selector)
-            # If we find any documents, the username exists
+            # Use Mango query to find user by username
+            query = {"selector": {"type": "user_profile", "username": username}}
+            result = self.db.find(query)
+            # Check if any results were returned
             return any(True for _ in result)
         except Exception as e:
-            logging.error(f"Error checking username existence: {str(e)}")
+            logging.error(f"Error checking if username exists: {str(e)}")
             return False
 
     def get_users_by_fitness_goal(self, goal: str):
@@ -315,7 +329,7 @@ class Database:
         try:
             user_doc = self.db[user_id]
             user_doc["hevy_api_key"] = api_key
-            user_doc["hevy_api_key_updated_at"] = datetime.utcnow().isoformat()
+            user_doc["hevy_api_key_updated_at"] = datetime.now(timezone.utc).isoformat()
             return self.db.save(user_doc)
         except couchdb.http.ResourceNotFound:
             return None

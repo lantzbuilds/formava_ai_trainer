@@ -5,8 +5,8 @@ services:
     ports:
       - "5984:5984"
     environment:
-      - COUCHDB_USERNAME=dedalus2
-      - COUCHDB_PASSWORD=s0NLyO/!XMx%%IVE
+      - COUCHDB_USER=ai_trainer_admin
+      - COUCHDB_PASSWORD=KTq29pZuEi1VsoNqf2mJMPTg
     volumes:
       - couchdb_data:/opt/couchdb/data
     healthcheck:

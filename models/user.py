@@ -67,8 +67,11 @@ class UserProfile(BaseModel):
     fitness_goals: List[FitnessGoal] = []
     injuries: List[Injury] = Field(default_factory=list)
 
+    # Workout Preferences
+    preferred_workout_days: int = 3  # Number of days per week
+    preferred_workout_duration: int = 60  # Duration in minutes
+
     # Additional Information
-    preferred_workout_days: List[str] = []  # e.g., ["Monday", "Wednesday", "Friday"]
     preferred_workout_time: Optional[str] = (
         None  # e.g., "morning", "afternoon", "evening"
     )
@@ -107,6 +110,8 @@ class UserProfile(BaseModel):
         age: int,
         fitness_goals: List[FitnessGoal],
         experience_level: str,
+        preferred_workout_days: int = 3,
+        preferred_workout_duration: int = 60,
         hevy_api_key: Optional[str] = None,
         injuries: Optional[List[dict]] = None,
     ) -> "UserProfile":
@@ -125,6 +130,8 @@ class UserProfile(BaseModel):
             age=age,
             fitness_goals=fitness_goals,
             experience_level=experience_level,
+            preferred_workout_days=preferred_workout_days,
+            preferred_workout_duration=preferred_workout_duration,
             hevy_api_key=hevy_api_key,
             injuries=[Injury(**injury) for injury in (injuries or [])],
         )
