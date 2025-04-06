@@ -643,7 +643,7 @@ class HevyAPI:
                     # Save to database
                     print(f"Saving workout: {workout_data['title']}")
                     try:
-                        db.save_workout(workout_data)
+                        db.save_workout(workout_data, user_id=user_id)
                         synced_count += 1
                     except Exception as e:
                         print(f"Error saving workout: {str(e)}")

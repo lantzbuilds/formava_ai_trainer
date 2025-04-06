@@ -122,15 +122,21 @@ def sync_hevy_page():
                     if workouts:
                         # Save workouts to database
                         for workout in workouts:
-                            db.save_workout(workout)
+                            db.save_workout(workout, user_id=st.session_state.user_id)
 
                         st.success(f"Successfully synced {len(workouts)} workouts!")
                     else:
                         st.info("No new workouts found to sync.")
 
-                # Update last sync time
-                user_doc["last_hevy_sync"] = datetime.now(timezone.utc).isoformat()
-                db.save_document(user_doc, doc_id=st.session_state.user_id)
+                # Update last sync time in user document
+                user_doc["last_hevy_sync"] = datetime.now().isoformat()
+                db.save_document(user_doc, user_doc["_id"])
+
+                # Recreate workouts design document to ensure views are up to date
+                db.recreate_workouts_design_document()
+
+                # Force a page refresh
+                st.rerun()
 
             except Exception as e:
                 logger.error(f"Error syncing from Hevy: {str(e)}")
@@ -171,22 +177,59 @@ def sync_hevy_page():
 
     # Display recent synced workouts
     st.subheader("Recent Synced Workouts")
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=7)
-    workouts = db.get_user_workout_history(
-        st.session_state.user_id,
-        start_date,
-        end_date,
-    )
 
-    if workouts:
-        for workout in workouts:
-            with st.expander(f"{workout['title']} - {workout['start_time']}"):
-                st.write(
-                    f"**Description:** {workout.get('description', 'No description')}"
-                )
-                st.write(f"**Exercises:** {workout['exercise_count']}")
-                if "duration" in workout:
-                    st.write(f"**Duration:** {workout['duration']:.1f} minutes")
+    # Get the last sync time
+    last_sync_time = None
+    if "last_hevy_sync" in user_doc:
+        last_sync_time = datetime.fromisoformat(user_doc["last_hevy_sync"])
+
+    # Get workouts synced since the last sync
+    if last_sync_time:
+        # Get workouts from a wider range to ensure we catch all workouts
+        end_date = datetime.now(
+            timezone.utc
+        )  # Use current date as end date with UTC timezone
+        start_date = end_date - timedelta(days=365 * 10)  # Look back 10 years
+
+        workouts = db.get_user_workout_history(
+            st.session_state.user_id,
+            start_date,
+            end_date,
+        )
+
+        if workouts:
+            st.write(f"Found {len(workouts)} workouts")
+            for workout in workouts:
+                # Debug information
+                st.write(f"Workout keys: {list(workout.keys())}")
+
+                # Safely get title and start_time with defaults
+                title = workout.get("title", "Untitled Workout")
+                start_time = workout.get("start_time", "Unknown time")
+
+                with st.expander(f"{title} - {start_time}"):
+                    st.write(
+                        f"**Description:** {workout.get('description', 'No description')}"
+                    )
+
+                    # Safely get exercise count with extensive error handling
+                    try:
+                        exercise_count = 0
+                        if "exercise_count" in workout:
+                            exercise_count = workout["exercise_count"]
+                        elif "exercises" in workout:
+                            exercise_count = len(workout["exercises"])
+                        st.write(f"**Exercises:** {exercise_count}")
+                    except Exception as e:
+                        st.write(f"**Exercises:** Error calculating count: {str(e)}")
+
+                    # Safely get duration
+                    try:
+                        if "duration" in workout:
+                            st.write(f"**Duration:** {workout['duration']:.1f} minutes")
+                    except Exception as e:
+                        st.write(f"**Duration:** Error displaying duration: {str(e)}")
+        else:
+            st.write("No workouts found. Try syncing your workouts.")
     else:
-        st.write("No recent workouts found.")
+        st.write("No sync history found. Try syncing your workouts.")

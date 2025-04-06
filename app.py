@@ -63,6 +63,14 @@ if "page" not in st.session_state:
     st.session_state.page = "dashboard"
 
 
+# Add a function to clear all caches
+def clear_all_caches():
+    """Clear all Streamlit caches."""
+    st.cache_data.clear()
+    st.cache_resource.clear()
+    logger.info("Cleared all Streamlit caches")
+
+
 def sidebar():
     """
     Render the sidebar navigation.
@@ -93,6 +101,12 @@ def sidebar():
 
     with st.sidebar:
         st.title("AI Personal Trainer")
+
+        # Add a button to clear caches
+        if st.button("Clear Caches"):
+            clear_all_caches()
+            st.success("Caches cleared!")
+            st.rerun()
 
         # Check if user is logged in
         if "user_id" in st.session_state and st.session_state.user_id:

@@ -23,6 +23,7 @@ langchain-core = "*"
 langchain-community = "*"
 chromadb = "==0.4.22"
 tiktoken = "*"
+psutil = "*"
 
 [dev-packages]
 black = "*"

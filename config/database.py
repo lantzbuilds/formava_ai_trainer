@@ -1,7 +1,7 @@
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import couchdb
@@ -29,6 +29,7 @@ class Database:
 
     def connect(self):
         """Connect to the CouchDB server and get or create the database."""
+        # TODO: why it this called multiple times when launching the app?
         try:
             logger.info(f"Connecting to CouchDB at {self.couchdb_url}")
 
@@ -163,6 +164,9 @@ class Database:
                             "by_hevy_id": {
                                 "map": "function(doc) { if (doc.type === 'workout') { emit(doc.hevy_id, doc); } }"
                             },
+                            "by_user": {
+                                "map": "function(doc) { if (doc.type === 'workout' && doc.user_id) { emit([doc.user_id, doc.start_time], doc); } }"
+                            },
                             "by_date": {
                                 "map": "function(doc) { if (doc.type === 'workout') { emit(doc.start_time, doc); } }"
                             },
@@ -179,6 +183,44 @@ class Database:
                 logger.info("Workouts design document created successfully")
         except Exception as e:
             logger.error(f"Error creating design documents: {str(e)}")
+
+    def recreate_workouts_design_document(self):
+        """Recreate the workouts design document to update views."""
+        try:
+            # Delete existing workouts design document if it exists
+            if "_design/workouts" in self.db:
+                logger.info("Deleting existing workouts design document")
+                doc = self.db["_design/workouts"]
+                self.db.delete(doc)
+
+            # Create new workouts design document
+            logger.info("Creating new workouts design document")
+            self.db.save(
+                {
+                    "_id": "_design/workouts",
+                    "views": {
+                        "by_hevy_id": {
+                            "map": "function(doc) { if (doc.type === 'workout') { emit(doc.hevy_id, doc); } }"
+                        },
+                        "by_user": {
+                            "map": "function(doc) { if (doc.type === 'workout' && doc.user_id) { emit([doc.user_id, doc.start_time], doc); } }"
+                        },
+                        "by_date": {
+                            "map": "function(doc) { if (doc.type === 'workout') { emit(doc.start_time, doc); } }"
+                        },
+                        "by_exercise": {
+                            "map": "function(doc) { if (doc.type === 'workout') { doc.exercises.forEach(function(ex) { emit([ex.template_id, doc.start_time], doc); }); } }"
+                        },
+                        "stats": {
+                            "map": "function(doc) { if (doc.type === 'workout') { emit(doc.start_time, {duration: doc.duration, exercise_count: doc.exercises.length}); } }",
+                            "reduce": "function(keys, values, rereduce) { return {total_duration: values.reduce(function(a, b) { return a + b.duration; }, 0), total_exercises: values.reduce(function(a, b) { return a + b.exercise_count; }, 0), count: values.length}; }",
+                        },
+                    },
+                }
+            )
+            logger.info("Workouts design document recreated successfully")
+        except Exception as e:
+            logger.error(f"Error recreating workouts design document: {str(e)}")
 
     def save_document(
         self, doc: Dict[str, Any], doc_id: Optional[str] = None
@@ -410,11 +452,66 @@ class Database:
         end_date: Optional[datetime] = None,
     ):
         """Get a user's workout history."""
-        if start_date and end_date:
-            return self.get_workouts_by_date_range(start_date, end_date)
-        return (
-            self.get_all_documents()
-        )  # You might want to add a user_id field to workouts for better filtering
+        try:
+            logger.info(f"Getting workout history for user {user_id}")
+
+            # If no date range is provided, use a very wide range to ensure we get all workouts
+            if not start_date or not end_date:
+                logger.info("No date range provided, using a very wide range")
+                # Use a range from 10 years ago to today
+                # Make sure to use UTC for consistency with the database
+                end_date = datetime.now(timezone.utc)
+                start_date = end_date - timedelta(days=365 * 10)
+
+            # Ensure dates have timezone information
+            if start_date and not start_date.tzinfo:
+                start_date = start_date.replace(tzinfo=timezone.utc)
+            if end_date and not end_date.tzinfo:
+                end_date = end_date.replace(tzinfo=timezone.utc)
+
+            logger.info(f"Date range: {start_date} to {end_date}")
+
+            # Convert dates to ISO format for the query
+            start_date_str = start_date.isoformat()
+            end_date_str = end_date.isoformat()
+
+            # Get workouts for the user within the date range
+            # The by_user view emits [user_id, start_time] as the key
+            result = self.db.view(
+                "workouts/by_user",
+                startkey=[user_id, start_date_str],
+                endkey=[user_id, end_date_str],
+                include_docs=True,
+            )
+
+            # Extract workout documents
+            workouts = [row.doc for row in result]
+            logger.info(
+                f"Found {len(workouts)} workouts for user {user_id} in date range {start_date_str} to {end_date_str}"
+            )
+
+            # Log details of each workout
+            for workout in workouts:
+                logger.info(f"Workout: {workout.get('title', 'Untitled')}")
+                logger.info(
+                    f"  start_time: {workout.get('start_time', 'No start time')}"
+                )
+                logger.info(f"  end_time: {workout.get('end_time', 'No end time')}")
+                logger.info(
+                    f"  created_at: {workout.get('created_at', 'No created_at')}"
+                )
+                logger.info(
+                    f"  updated_at: {workout.get('updated_at', 'No updated_at')}"
+                )
+
+            return workouts
+        except Exception as e:
+            logger.error(f"Error getting user workout history: {str(e)}")
+            logger.error(f"Exception type: {type(e).__name__}")
+            import traceback
+
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return []
 
     def save_exercise(self, exercise_data: Dict[str, Any]) -> str:
         """
@@ -531,7 +628,10 @@ class Database:
             return []
 
     def save_workout(
-        self, workout_data: Dict[str, Any], doc_id: Optional[str] = None
+        self,
+        workout_data: Dict[str, Any],
+        doc_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> str:
         """
         Save a workout to the database.
@@ -539,18 +639,26 @@ class Database:
         Args:
             workout_data: Workout data to save
             doc_id: Optional document ID to use
+            user_id: Optional user ID to associate with the workout
 
         Returns:
             Document ID
         """
         try:
             # Log the arguments being passed
-            logger.info(f"save_workout called with doc_id: {doc_id}")
+            logger.info(
+                f"save_workout called with doc_id: {doc_id}, user_id: {user_id}"
+            )
             logger.info(f"Workout data keys: {list(workout_data.keys())}")
 
             # Set the document type
             workout_data["type"] = "workout"
             logger.info(f"Set workout type to: workout")
+
+            # Set the user_id if provided
+            if user_id:
+                workout_data["user_id"] = user_id
+                logger.info(f"Set workout user_id to: {user_id}")
 
             # Set the document ID if provided
             if doc_id:
@@ -565,6 +673,11 @@ class Database:
                     workout_data["_id"] = existing["_id"]
                     workout_data["_rev"] = existing["_rev"]
                     logger.info(f"Updating existing workout with ID: {existing['_id']}")
+
+            # Ensure exercise_count is set
+            if "exercise_count" not in workout_data and "exercises" in workout_data:
+                workout_data["exercise_count"] = len(workout_data["exercises"])
+                logger.info(f"Set exercise_count to: {workout_data['exercise_count']}")
 
             # Save to database
             doc_id, _ = self.db.save(workout_data)

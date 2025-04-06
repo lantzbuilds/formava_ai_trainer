@@ -84,6 +84,17 @@ def create_workout_views(db):
         """,
     }
 
+    # View for finding workouts by user ID
+    user_view = {
+        "map": """
+        function(doc) {
+            if (doc.type === 'workout' && doc.user_id) {
+                emit(doc.user_id, doc);
+            }
+        }
+        """,
+    }
+
     # Create the design document with all views
     design_doc = {
         "_id": "_design/workouts",
@@ -92,6 +103,7 @@ def create_workout_views(db):
             "by_exercise": exercise_view,
             "stats": stats_view,
             "by_hevy_id": hevy_id_view,
+            "by_user": user_view,
         },
     }
 

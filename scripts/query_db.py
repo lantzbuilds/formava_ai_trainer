@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 def connect_to_db():
     """Connect to CouchDB using environment variables."""
     load_dotenv()
-    username = os.getenv("COUCHDB_USERNAME")
+    username = os.getenv("COUCHDB_USER")
     password = os.getenv("COUCHDB_PASSWORD")
     host = os.getenv("COUCHDB_HOST", "localhost")
     port = os.getenv("COUCHDB_PORT", "5984")
@@ -72,69 +72,119 @@ def get_doc(doc_id):
 
 
 def find_users():
-    """Find all user profile documents."""
+    """Find all user documents in the database."""
     db = connect_to_db()
-
-    print(f"Database name: {db.name}")
-    print(f"Database info: {db.info()}")
-
-    # Using Mango query for better filtering
-    selector = {
-        "selector": {"type": {"$eq": "user_profile"}},
-        "use_index": ["type-index"],
-    }
+    users = []
 
     try:
-        print(f"Executing query: {selector}")
-        results = list(db.find(selector))
-        print(f"Query returned {len(results)} results")
+        # Query the users view
+        results = db.view("users/by_username", include_docs=True)
+        for row in results:
+            users.append(row.doc)
+            print(f"User: {row.doc.get('username', 'Unknown')}")
+            print(f"  ID: {row.doc.get('_id', 'Unknown')}")
+            print(f"  Email: {row.doc.get('email', 'Unknown')}")
+            print(f"  Created: {row.doc.get('created_at', 'Unknown')}")
+            print(f"  Last Login: {row.doc.get('last_login', 'Unknown')}")
+            print("")
 
-        if not results:
-            print("No user profiles found in the database.")
-            return
-
-        for doc in results:
-            print(f"\nUser Profile:")
-            print(f"Username: {doc.get('username', 'N/A')}")
-            print(f"Email: {doc.get('email', 'N/A')}")
-            print(f"Created: {doc.get('created_at', 'N/A')}")
-            if doc.get("injuries"):
-                print(f"Number of injuries: {len(doc['injuries'])}")
-            print("-" * 50)
-
+        return users
     except Exception as e:
-        print(f"Error querying users: {str(e)}")
-        print("You may need to create an index first. Creating index...")
-        try:
-            # Create an index on the type field
-            db.create_index(["type"], name="type-index")
-            print("Index created. Please try the query again.")
-        except Exception as e:
-            print(f"Error creating index: {str(e)}")
+        print(f"Error finding users: {str(e)}")
+        return []
+
+
+def find_workouts(user_id=None, include_details=False):
+    """
+    Find all workout documents in the database.
+
+    Args:
+        user_id: Optional user ID to filter workouts by
+        include_details: Whether to include full workout details
+    """
+    db = connect_to_db()
+    workouts = []
+
+    try:
+        if user_id:
+            # Query the workouts by user view
+            print(f"Finding workouts for user ID: {user_id}")
+            results = db.view("workouts/by_user", key=user_id, include_docs=True)
+        else:
+            # Query all workouts
+            print("Finding all workouts")
+            results = db.view("workouts/by_date", include_docs=True)
+
+        for row in results:
+            workout = row.doc
+            workouts.append(workout)
+
+            # Print basic workout info
+            print(f"Workout: {workout.get('title', 'Untitled')}")
+            print(f"  ID: {workout.get('_id', 'Unknown')}")
+            print(f"  User ID: {workout.get('user_id', 'Unknown')}")
+            print(f"  Start Time: {workout.get('start_time', 'Unknown')}")
+            print(f"  End Time: {workout.get('end_time', 'Unknown')}")
+            print(f"  Exercise Count: {workout.get('exercise_count', 0)}")
+
+            # Print more details if requested
+            if include_details:
+                print(f"  Description: {workout.get('description', 'No description')}")
+                print(f"  Created At: {workout.get('created_at', 'Unknown')}")
+                print(f"  Updated At: {workout.get('updated_at', 'Unknown')}")
+                print(f"  Last Synced: {workout.get('last_synced', 'Unknown')}")
+
+                # Print exercises
+                print("  Exercises:")
+                for i, exercise in enumerate(workout.get("exercises", [])):
+                    print(f"    {i+1}. {exercise.get('name', 'Unknown')}")
+                    print(f"       Sets: {len(exercise.get('sets', []))}")
+
+            print("")
+
+        print(f"Found {len(workouts)} workouts")
+        return workouts
+    except Exception as e:
+        print(f"Error finding workouts: {str(e)}")
+        import traceback
+
+        print(f"Traceback: {traceback.format_exc()}")
+        return []
 
 
 def main():
+    """Main function to run the script."""
     if len(sys.argv) < 2:
-        print("Usage:")
-        print("  python query_db.py list         - List regular documents")
+        print("Usage: python query_db.py <command> [args]")
+        print("Commands:")
+        print("  list_docs [include_design_docs] - List all documents")
+        print("  get_doc <doc_id> - Get a specific document")
+        print("  find_users - Find all user documents")
         print(
-            "  python query_db.py list --all   - List all documents including design docs"
+            "  find_workouts [user_id] [include_details] - Find all workout documents"
         )
-        print("  python query_db.py users        - List all user profiles")
-        print("  python query_db.py get <id>     - Get specific document")
-        return
+        sys.exit(1)
 
     command = sys.argv[1]
 
-    if command == "list":
-        include_design = len(sys.argv) > 2 and sys.argv[2] == "--all"
-        list_all_docs(include_design)
-    elif command == "users":
+    if command == "list_docs":
+        include_design_docs = len(sys.argv) > 2 and sys.argv[2].lower() == "true"
+        list_all_docs(include_design_docs)
+    elif command == "get_doc":
+        if len(sys.argv) < 3:
+            print("Error: Missing document ID")
+            sys.exit(1)
+        doc_id = sys.argv[2]
+        get_doc(doc_id)
+    elif command == "find_users":
         find_users()
-    elif command == "get" and len(sys.argv) > 2:
-        get_doc(sys.argv[2])
+    elif command == "find_workouts":
+        user_id = sys.argv[2] if len(sys.argv) > 2 else None
+        include_details = len(sys.argv) > 3 and sys.argv[3].lower() == "true"
+        find_workouts(user_id, include_details)
     else:
-        print("Invalid command")
+        print(f"Unknown command: {command}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
