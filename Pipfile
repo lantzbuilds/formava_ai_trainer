@@ -17,6 +17,12 @@ bcrypt = "*"
 email-validator = "*"
 watchdog = "*"
 cryptography = "*"
+langchain = "==0.1.0"
+langchain-openai = "*"
+langchain-core = "*"
+langchain-community = "*"
+chromadb = "==0.4.22"
+tiktoken = "*"
 
 [dev-packages]
 black = "*"

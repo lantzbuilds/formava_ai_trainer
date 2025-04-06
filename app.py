@@ -50,24 +50,52 @@ st.set_page_config(
     page_icon="💪",
     layout="wide",
     initial_sidebar_state="expanded",
+    menu_items=None,
 )
+st.set_option("client.showSidebarNavigation", False)
 
 # Initialize session state for user authentication
 if "user_id" not in st.session_state:
     st.session_state.user_id = None
 if "username" not in st.session_state:
     st.session_state.username = None
+if "page" not in st.session_state:
+    st.session_state.page = "dashboard"
 
 
 def sidebar():
     """
     Render the sidebar navigation.
     """
+    # Hide the default Streamlit navigation
+    # hide_streamlit_style = """
+    #     <style>
+    #     #MainMenu {display: none !important;}
+    #     footer {display: none !important;}
+    #     header {display: none !important;}
+    #     .stDeployButton {display: none !important;}
+    #     .stApp > header {display: none !important;}
+    #     .stApp > footer {display: none !important;}
+    #     .stApp > div[data-testid="stSidebar"] > div:first-child {display: none !important;}
+    #     .stApp > div[data-testid="stSidebar"] > div:nth-child(2) {display: none !important;}
+    #     .stApp > div[data-testid="stSidebar"] > div:nth-child(3) {display: none !important;}
+    #     .stApp > div[data-testid="stSidebar"] > div:nth-child(4) {display: none !important;}
+    #     .stApp > div[data-testid="stSidebar"] > div:nth-child(5) {display: none !important;}
+    #     .stApp > div[data-testid="stSidebar"] > div:nth-child(6) {display: none !important;}
+    #     .stApp > div[data-testid="stSidebar"] > div:nth-child(7) {display: none !important;}
+    #     .stApp > div[data-testid="stSidebar"] > div:nth-child(8) {display: none !important;}
+    #     .stApp > div[data-testid="stSidebar"] > div:nth-child(9) {display: none !important;}
+    #     .stApp > div[data-testid="stSidebar"] > div:nth-child(10) {display: none !important;}
+    #     ul[data-testid="stSidebarNavItems"] {display: none !important;}
+    #     </style>
+    # """
+    # st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
     with st.sidebar:
         st.title("AI Personal Trainer")
 
         # Check if user is logged in
-        if "user_id" in st.session_state:
+        if "user_id" in st.session_state and st.session_state.user_id:
             # Navigation options for logged-in users
             selected = st.radio(
                 "Navigation",
@@ -82,19 +110,19 @@ def sidebar():
                 ],
             )
 
-            # Handle navigation
+            # Set the selected page in session state
             if selected == "Dashboard":
-                dashboard_page()
+                st.session_state.page = "dashboard"
             elif selected == "Workout History":
-                workout_history_page()
+                st.session_state.page = "workout_history"
             elif selected == "AI Recommendations":
-                ai_recommendations_page()
+                st.session_state.page = "ai_recommendations"
             elif selected == "Routines":
-                routines_page()
+                st.session_state.page = "routines"
             elif selected == "Sync Hevy":
-                sync_hevy_page()
+                st.session_state.page = "sync_hevy"
             elif selected == "Profile":
-                profile_page()
+                st.session_state.page = "profile"
             elif selected == "Logout":
                 # Clear session state
                 for key in list(st.session_state.keys()):
@@ -107,23 +135,44 @@ def sidebar():
                 ["Login", "Register"],
             )
 
-            # Handle navigation
+            # Set the selected page in session state
             if selected == "Login":
-                login_page()
+                st.session_state.page = "login"
             elif selected == "Register":
-                register_page()
+                st.session_state.page = "register"
+
+
+def render_page():
+    """
+    Render the selected page based on session state.
+    """
+    if st.session_state.page == "dashboard":
+        dashboard_page()
+    elif st.session_state.page == "workout_history":
+        workout_history_page()
+    elif st.session_state.page == "ai_recommendations":
+        ai_recommendations_page()
+    elif st.session_state.page == "routines":
+        routines_page()
+    elif st.session_state.page == "sync_hevy":
+        sync_hevy_page()
+    elif st.session_state.page == "profile":
+        profile_page()
+    elif st.session_state.page == "login":
+        login_page()
+    elif st.session_state.page == "register":
+        register_page()
 
 
 def main():
     """
     Main application function.
     """
-    # Initialize session state for page navigation
-    if "page" not in st.session_state:
-        st.session_state.page = "dashboard"
-
     # Render the sidebar
     sidebar()
+
+    # Render the selected page
+    render_page()
 
 
 if __name__ == "__main__":

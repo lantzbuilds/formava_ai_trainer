@@ -5,14 +5,14 @@ def create_workout_views(db):
     date_range_view = {
         "map": """
         function(doc) {
-            if (doc.start_time) {
+            if (doc.type === 'workout' && doc.start_time) {
                 emit(doc.start_time, {
                     id: doc._id,
                     title: doc.title,
                     description: doc.description,
                     start_time: doc.start_time,
                     end_time: doc.end_time,
-                    exercise_count: doc.exercises.length
+                    exercise_count: doc.exercise_count || (doc.exercises ? doc.exercises.length : 0)
                 });
             }
         }
@@ -24,7 +24,7 @@ def create_workout_views(db):
     exercise_view = {
         "map": """
         function(doc) {
-            if (doc.exercises) {
+            if (doc.type === 'workout' && doc.exercises) {
                 doc.exercises.forEach(function(exercise) {
                     emit([exercise.exercise_template_id, doc.start_time], {
                         workout_id: doc._id,
@@ -44,7 +44,7 @@ def create_workout_views(db):
     stats_view = {
         "map": """
         function(doc) {
-            if (doc.exercises) {
+            if (doc.type === 'workout' && doc.exercises) {
                 var totalSets = 0;
                 var totalExercises = doc.exercises.length;
                 var totalWeight = 0;
@@ -73,6 +73,17 @@ def create_workout_views(db):
         "reduce": "_stats",
     }
 
+    # View for finding workouts by Hevy ID
+    hevy_id_view = {
+        "map": """
+        function(doc) {
+            if (doc.type === 'workout' && doc.hevy_id) {
+                emit(doc.hevy_id, doc);
+            }
+        }
+        """,
+    }
+
     # Create the design document with all views
     design_doc = {
         "_id": "_design/workouts",
@@ -80,6 +91,7 @@ def create_workout_views(db):
             "by_date": date_range_view,
             "by_exercise": exercise_view,
             "stats": stats_view,
+            "by_hevy_id": hevy_id_view,
         },
     }
 

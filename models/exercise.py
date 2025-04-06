@@ -45,6 +45,7 @@ class Exercise(BaseModel):
     is_custom: bool = False
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+    embedding: Optional[List[float]] = None  # Store the OpenAI embedding
 
     @classmethod
     def from_hevy_api(cls, data: Dict[str, Any]) -> "Exercise":
@@ -99,6 +100,7 @@ class Exercise(BaseModel):
             is_custom=data.get("is_custom", False),
             created_at=data.get("created_at", ""),
             updated_at=data.get("updated_at", ""),
+            embedding=data.get("embedding", None),  # Include embedding if it exists
         )
 
 

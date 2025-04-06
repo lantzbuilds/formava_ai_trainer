@@ -180,11 +180,22 @@ class Database:
         except Exception as e:
             logger.error(f"Error creating design documents: {str(e)}")
 
-    def save_document(self, doc: Dict[str, Any]) -> Tuple[str, str]:
+    def save_document(
+        self, doc: Dict[str, Any], doc_id: Optional[str] = None
+    ) -> Tuple[str, str]:
         """Save a document to the database."""
         try:
+            # Log the arguments being passed
+            logger.info(f"save_document called with doc_id: {doc_id}")
+            logger.info(f"Document keys: {list(doc.keys())}")
+
             # Ensure the document is JSON serializable
             doc = self._ensure_json_serializable(doc)
+
+            # Set the document ID if provided
+            if doc_id:
+                doc["_id"] = doc_id
+                logger.info(f"Set document _id to: {doc_id}")
 
             # Save the document
             doc_id, doc_rev = self.db.save(doc)
@@ -192,6 +203,10 @@ class Database:
             return doc_id, doc_rev
         except Exception as e:
             logger.error(f"Error saving document: {str(e)}")
+            logger.error(f"Exception type: {type(e).__name__}")
+            import traceback
+
+            logger.error(f"Traceback: {traceback.format_exc()}")
             raise
 
     def _ensure_json_serializable(self, obj: Any) -> Any:
@@ -258,17 +273,25 @@ class Database:
     def get_workouts_by_date_range(self, start_date, end_date):
         """Get workouts within a date range."""
         try:
-            return [
-                row.value
-                for row in self.db.view(
-                    "workouts/by_date",
-                    startkey=start_date.isoformat(),
-                    endkey=end_date.isoformat(),
-                )
-            ]
-        except couchdb.http.ResourceNotFound:
-            # View doesn't exist yet (no workouts have been synced)
-            logging.info("No workout history view found yet. Returning empty list.")
+            # Convert dates to ISO format if they aren't already
+            if isinstance(start_date, datetime):
+                start_date = start_date.isoformat()
+            if isinstance(end_date, datetime):
+                end_date = end_date.isoformat()
+
+            # Query the view
+            result = self.db.view(
+                "workouts/by_date",
+                startkey=start_date,
+                endkey=end_date,
+                include_docs=True,
+            )
+
+            # Extract workout documents
+            workouts = [row.doc for row in result]
+            return workouts
+        except Exception as e:
+            print(f"Error getting workouts by date range: {e}")
             return []
 
     def get_workouts_by_exercise(self, exercise_template_id: str):
@@ -404,6 +427,12 @@ class Database:
             Document ID
         """
         try:
+            exercise_name = exercise_data.get("name", "Unknown")
+            has_embedding = "embedding" in exercise_data
+            logger.info(
+                f"Saving exercise: {exercise_name} (Has embedding: {has_embedding})"
+            )
+
             # Check if exercise already exists by hevy_id
             if "hevy_id" in exercise_data:
                 existing = self.get_exercise_by_hevy_id(exercise_data["hevy_id"])
@@ -411,10 +440,30 @@ class Database:
                     # Update existing exercise
                     exercise_data["_id"] = existing["_id"]
                     exercise_data["_rev"] = existing["_rev"]
+                    logger.info(
+                        f"Updating existing exercise: {exercise_name} (ID: {existing['_id']})"
+                    )
+
+                    # Check if we're preserving the embedding
+                    if has_embedding and "embedding" not in existing:
+                        logger.info(
+                            f"Adding embedding to existing exercise: {exercise_name}"
+                        )
+                    elif has_embedding and "embedding" in existing:
+                        logger.info(
+                            f"Updating embedding for existing exercise: {exercise_name}"
+                        )
+                    elif not has_embedding and "embedding" in existing:
+                        logger.info(
+                            f"Preserving existing embedding for exercise: {exercise_name}"
+                        )
+                        exercise_data["embedding"] = existing["embedding"]
 
             # Save to database
             doc_id, _ = self.db.save(exercise_data)
-            logger.info(f"Saved exercise with ID: {doc_id}")
+            logger.info(
+                f"Saved exercise with ID: {doc_id} (Has embedding: {'embedding' in exercise_data})"
+            )
             return doc_id
         except Exception as e:
             logger.error(f"Error saving exercise: {str(e)}")
@@ -435,7 +484,13 @@ class Database:
                 "exercises/by_hevy_id", key=hevy_id, include_docs=True
             )
             for row in results:
-                return row.doc
+                exercise = row.doc
+                has_embedding = "embedding" in exercise
+                logger.info(
+                    f"Retrieved exercise by Hevy ID {hevy_id}: {exercise.get('name', 'Unknown')} (Has embedding: {has_embedding})"
+                )
+                return exercise
+            logger.info(f"No exercise found with Hevy ID: {hevy_id}")
             return None
         except Exception as e:
             logger.error(f"Error getting exercise by Hevy ID: {str(e)}")
@@ -475,24 +530,41 @@ class Database:
             logger.error(f"Error getting all exercises: {str(e)}")
             return []
 
-    def save_workout(self, workout_data: Dict[str, Any]) -> str:
+    def save_workout(
+        self, workout_data: Dict[str, Any], doc_id: Optional[str] = None
+    ) -> str:
         """
         Save a workout to the database.
 
         Args:
             workout_data: Workout data to save
+            doc_id: Optional document ID to use
 
         Returns:
             Document ID
         """
         try:
+            # Log the arguments being passed
+            logger.info(f"save_workout called with doc_id: {doc_id}")
+            logger.info(f"Workout data keys: {list(workout_data.keys())}")
+
+            # Set the document type
+            workout_data["type"] = "workout"
+            logger.info(f"Set workout type to: workout")
+
+            # Set the document ID if provided
+            if doc_id:
+                workout_data["_id"] = doc_id
+                logger.info(f"Set workout _id to: {doc_id}")
+
             # Check if workout already exists by hevy_id
-            if "hevy_id" in workout_data:
+            elif "hevy_id" in workout_data:
                 existing = self.get_workout_by_hevy_id(workout_data["hevy_id"])
                 if existing:
                     # Update existing workout
                     workout_data["_id"] = existing["_id"]
                     workout_data["_rev"] = existing["_rev"]
+                    logger.info(f"Updating existing workout with ID: {existing['_id']}")
 
             # Save to database
             doc_id, _ = self.db.save(workout_data)
@@ -500,6 +572,10 @@ class Database:
             return doc_id
         except Exception as e:
             logger.error(f"Error saving workout: {str(e)}")
+            logger.error(f"Exception type: {type(e).__name__}")
+            import traceback
+
+            logger.error(f"Traceback: {traceback.format_exc()}")
             raise
 
     def get_workout_by_hevy_id(self, hevy_id: str) -> Optional[Dict[str, Any]]:
@@ -524,29 +600,29 @@ class Database:
             return None
 
     def save_exercises(
-        self, exercises: List[Dict[str, Any]], user_id: Optional[str] = None
+        self,
+        exercises: List[Dict[str, Any]],
+        is_custom: bool = False,
+        user_id: Optional[str] = None,
     ) -> None:
         """
         Save exercises to the database.
 
         Args:
-            exercises: List of exercise data to save
-            user_id: Optional user ID for custom exercises. If None, exercises are considered base exercises.
+            exercises: List of exercise dictionaries
+            is_custom: Whether these are custom exercises
+            user_id: User ID for custom exercises
         """
         try:
-            # Determine if these are base exercises or custom exercises
-            is_custom = user_id is not None
-
-            # Create a document to store exercises
-            if is_custom:
-                # For custom exercises, store them in a user-specific document
+            # Determine document ID and type
+            if is_custom and user_id:
                 doc_id = f"custom_exercises_{user_id}"
-                doc_type = "custom_exercise_list"
+                doc_type = "custom_exercises"
             else:
-                # For base exercises, store them in a shared document
                 doc_id = "base_exercises"
-                doc_type = "base_exercise_list"
+                doc_type = "base_exercises"
 
+            # Create document
             exercise_doc = {
                 "_id": doc_id,
                 "type": doc_type,
@@ -566,6 +642,93 @@ class Database:
             logger.info(
                 f"Saved {len(exercises)} {'custom' if is_custom else 'base'} exercises"
             )
+
+            # Get existing exercises to check for embeddings
+            existing_exercises = []
+            try:
+                if is_custom and user_id:
+                    existing_doc = self.db.get(f"custom_exercises_{user_id}")
+                    if existing_doc and "exercises" in existing_doc:
+                        existing_exercises = existing_doc["exercises"]
+                        logger.info(
+                            f"Found {len(existing_exercises)} existing custom exercises"
+                        )
+                else:
+                    existing_doc = self.db.get("base_exercises")
+                    if existing_doc and "exercises" in existing_doc:
+                        existing_exercises = existing_doc["exercises"]
+                        logger.info(
+                            f"Found {len(existing_exercises)} existing base exercises"
+                        )
+            except couchdb.http.ResourceNotFound:
+                logger.info(
+                    f"No existing {'custom' if is_custom else 'base'} exercises found"
+                )
+                pass
+
+            # Create a map of existing exercises by ID
+            existing_exercise_map = {ex.get("id"): ex for ex in existing_exercises}
+            logger.info(
+                f"Created map with {len(existing_exercise_map)} existing exercises"
+            )
+
+            # Only add exercises to vector store that don't already have embeddings
+            exercises_to_add = []
+            exercises_with_embeddings = 0
+            for exercise in exercises:
+                exercise_id = exercise.get("id")
+                logger.info(
+                    f"Processing exercise: {exercise.get('name', 'Unknown')} (ID: {exercise_id})"
+                )
+
+                if exercise_id in existing_exercise_map:
+                    # Check if the existing exercise has an embedding
+                    if "embedding" in existing_exercise_map[exercise_id]:
+                        # Copy the embedding to the new exercise
+                        exercise["embedding"] = existing_exercise_map[exercise_id][
+                            "embedding"
+                        ]
+                        logger.info(
+                            f"Reused existing embedding for exercise: {exercise.get('name', 'Unknown')}"
+                        )
+                        # Save the exercise with the embedding
+                        self.save_exercise(exercise)
+                        exercises_with_embeddings += 1
+                    else:
+                        logger.info(
+                            f"No embedding found for existing exercise: {exercise.get('name', 'Unknown')}"
+                        )
+                        exercises_to_add.append(exercise)
+                else:
+                    # New exercise, add to vector store
+                    logger.info(
+                        f"New exercise found: {exercise.get('name', 'Unknown')}"
+                    )
+                    exercises_to_add.append(exercise)
+
+            logger.info(
+                f"Found {exercises_with_embeddings} exercises with existing embeddings"
+            )
+            logger.info(
+                f"Need to generate embeddings for {len(exercises_to_add)} exercises"
+            )
+
+            # Only add new exercises to vector store
+            if exercises_to_add:
+                from services.vector_store import ExerciseVectorStore
+
+                vector_store = ExerciseVectorStore()
+                vector_store.add_exercises(exercises_to_add)
+
+                # Update the exercises in the database with the embeddings
+                for exercise in exercises_to_add:
+                    if "embedding" in exercise:
+                        # Save the exercise with the embedding
+                        self.save_exercise(exercise)
+                        logger.info(
+                            f"Saved exercise with new embedding: {exercise.get('name', 'Unknown')}"
+                        )
+
         except Exception as e:
             logger.error(f"Error saving exercises: {str(e)}")
             raise

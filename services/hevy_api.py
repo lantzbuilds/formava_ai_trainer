@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Union
 
 import requests
@@ -38,9 +38,9 @@ class HevyAPI:
             List of workout dictionaries
         """
         if not start_date:
-            start_date = datetime.utcnow() - timedelta(days=30)
+            start_date = datetime.now(timezone.utc) - timedelta(days=30)
         if not end_date:
-            end_date = datetime.utcnow()
+            end_date = datetime.now(timezone.utc)
 
         # Format dates for API
         start_str = start_date.isoformat()
@@ -88,7 +88,7 @@ class HevyAPI:
             List of workout event dictionaries
         """
         if not since_date:
-            since_date = datetime.utcnow() - timedelta(days=30)
+            since_date = datetime.now(timezone.utc) - timedelta(days=30)
 
         # Format date for API
         since_str = since_date.isoformat()
@@ -196,12 +196,164 @@ class HevyAPI:
         url = f"{self.base_url}/routines"
 
         try:
-            response = requests.post(url, headers=self.headers, json=routine_data)
+            # Check if the routine has the new format with weeks
+            if "weeks" in routine_data and routine_data["weeks"]:
+                # Convert the new format to Hevy API format
+                hevy_routine = self._convert_routine_to_hevy_format(routine_data)
+            else:
+                # Check if the routine is already in the correct format
+                if "routine" in routine_data:
+                    hevy_routine = routine_data
+                else:
+                    # Convert to the correct format
+                    hevy_routine = {
+                        "routine": {
+                            "title": routine_data.get("name", "Unnamed Routine"),
+                            "folder_id": None,
+                            "notes": routine_data.get("description", ""),
+                            "exercises": routine_data.get("exercises", []),
+                        }
+                    }
+
+            # Log the request for debugging
+            print(
+                f"Sending routine creation request: {json.dumps(hevy_routine, indent=2)}"
+            )
+
+            response = requests.post(url, headers=self.headers, json=hevy_routine)
             response.raise_for_status()
             return response.json().get("id")
         except requests.exceptions.RequestException as e:
             print(f"Error creating routine: {e}")
             return None
+
+    def _convert_routine_to_hevy_format(
+        self, routine_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Convert the new routine format with weeks to Hevy API format.
+
+        Args:
+            routine_data: Routine data in the new format
+
+        Returns:
+            Routine data in Hevy API format
+        """
+        # Extract basic routine information
+        name = routine_data.get("name", "Unnamed Routine")
+        description = routine_data.get("description", "")
+        difficulty = routine_data.get("difficulty", "intermediate")
+        estimated_duration = routine_data.get("estimated_duration", 60)
+        target_muscle_groups = routine_data.get("target_muscle_groups", [])
+        equipment_needed = routine_data.get("equipment_needed", [])
+
+        # Create a flat list of exercises from all weeks and days
+        exercises = []
+
+        # Process each week
+        for week in routine_data.get("weeks", []):
+            week_number = week.get("week_number", 0)
+            rpe = week.get("rpe", 0)
+
+            # Process each day in the week
+            for day in week.get("days", []):
+                day_number = day.get("day_number", 0)
+                focus = day.get("focus", "")
+
+                # Process each exercise in the day
+                for exercise in day.get("exercises", []):
+                    exercise_id = exercise.get("exercise_id", "")
+                    exercise_name = exercise.get("name", "")
+                    sets = exercise.get("sets", 0)
+                    reps = exercise.get("reps", "")
+                    rpe = exercise.get("rpe", 0)
+                    notes = exercise.get("notes", "")
+                    modifications = exercise.get("modifications", [])
+
+                    # Create exercise data in Hevy API format
+                    exercise_data = {
+                        "exercise_template_id": exercise_id,
+                        "superset_id": None,
+                        "rest_seconds": 90,  # Default rest time
+                        "notes": notes,
+                        "sets": [],
+                    }
+
+                    # Add sets based on reps format
+                    if isinstance(reps, str) and "x" in reps:
+                        # Format like "10x3" (reps x sets)
+                        reps_str, sets_str = reps.split("x")
+                        reps_count = int(reps_str)
+                        sets_count = int(sets_str)
+                    else:
+                        # Default values
+                        reps_count = 10
+                        sets_count = sets
+
+                    # Create sets
+                    for _ in range(sets_count):
+                        set_data = {
+                            "type": "normal",
+                            "weight_kg": None,  # No weight specified
+                            "reps": reps_count,
+                            "distance_meters": None,
+                            "duration_seconds": None,
+                            "custom_metric": None,
+                        }
+                        exercise_data["sets"].append(set_data)
+
+                    exercises.append(exercise_data)
+
+                # Process cardio if present
+                if "cardio" in day and day["cardio"]:
+                    cardio = day["cardio"]
+                    cardio_type = cardio.get("type", "")
+                    cardio_duration = cardio.get("duration", "")
+                    cardio_intensity = cardio.get("intensity", "")
+
+                    # Parse duration to seconds
+                    duration_seconds = 0
+                    if cardio_duration:
+                        if "min" in cardio_duration.lower():
+                            try:
+                                minutes = int(cardio_duration.split()[0])
+                                duration_seconds = minutes * 60
+                            except (ValueError, IndexError):
+                                duration_seconds = 600  # Default 10 minutes
+                        else:
+                            duration_seconds = 600  # Default 10 minutes
+
+                    # Create cardio data in Hevy API format
+                    cardio_data = {
+                        "exercise_template_id": "cardio",  # Use a placeholder ID
+                        "superset_id": None,
+                        "rest_seconds": 0,
+                        "notes": f"{cardio_type} at {cardio_intensity} intensity",
+                        "sets": [
+                            {
+                                "type": "normal",
+                                "weight_kg": None,
+                                "reps": None,
+                                "distance_meters": None,
+                                "duration_seconds": duration_seconds,
+                                "custom_metric": None,
+                            }
+                        ],
+                    }
+
+                    exercises.append(cardio_data)
+
+        # Create Hevy API format
+        hevy_routine = {
+            "routine": {
+                "title": name,
+                "folder_id": None,
+                "notes": description,
+                "exercises": exercises,
+            }
+        }
+
+        return hevy_routine
 
     def update_routine(self, routine_id: str, routine_data: Dict[str, Any]) -> bool:
         """
@@ -295,7 +447,7 @@ class HevyAPI:
 
                 exercises_data.append(exercise_data)
 
-            updated_at = datetime.utcnow().isoformat()
+            updated_at = datetime.now(timezone.utc).isoformat()
             return ExerciseList.from_hevy_api(exercises_data, updated_at)
         except requests.exceptions.RequestException as e:
             print(f"Error fetching exercises: {e}")
@@ -395,17 +547,31 @@ class HevyAPI:
         page = 1
 
         while page <= max_pages:
-            exercise_list = self.get_exercises(
-                page=page, page_size=100, include_custom=include_custom
-            )
-            if not exercise_list.exercises:
+            try:
+                exercise_list = self.get_exercises(
+                    page=page, page_size=100, include_custom=include_custom
+                )
+                if not exercise_list.exercises:
+                    # No more exercises found, break the loop
+                    break
+
+                all_exercises.extend(exercise_list.exercises)
+                page += 1
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 404:
+                    # Page not found, we've reached the end of available pages
+                    print(f"Page {page} not found, stopping pagination")
+                    break
+                else:
+                    # Re-raise other HTTP errors
+                    raise
+            except Exception as e:
+                # Log other exceptions and continue with what we have so far
+                print(f"Error fetching page {page}: {e}")
                 break
 
-            all_exercises.extend(exercise_list.exercises)
-            page += 1
-
         return ExerciseList(
-            exercises=all_exercises, updated_at=datetime.utcnow().isoformat()
+            exercises=all_exercises, updated_at=datetime.now(timezone.utc).isoformat()
         )
 
     def sync_workouts(self, db, user_id: str) -> int:
@@ -471,11 +637,19 @@ class HevyAPI:
                         "created_at": details.get("created_at"),
                         "exercises": details.get("exercises", []),
                         "exercise_count": len(details.get("exercises", [])),
-                        "last_synced": datetime.utcnow().isoformat(),
+                        "last_synced": datetime.now(timezone.utc).isoformat(),
                     }
 
                     # Save to database
-                    db.save_workout(workout_data)
-                    synced_count += 1
+                    print(f"Saving workout: {workout_data['title']}")
+                    try:
+                        db.save_workout(workout_data)
+                        synced_count += 1
+                    except Exception as e:
+                        print(f"Error saving workout: {str(e)}")
+                        print(f"Exception type: {type(e).__name__}")
+                        import traceback
+
+                        print(f"Traceback: {traceback.format_exc()}")
 
         return synced_count

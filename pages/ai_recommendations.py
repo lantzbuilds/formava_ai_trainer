@@ -2,6 +2,7 @@
 AI recommendations page for the AI Personal Trainer application.
 """
 
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -9,6 +10,7 @@ import streamlit as st
 
 from config.database import Database
 from models.user import UserProfile
+from services.hevy_api import HevyAPI
 from services.openai_service import OpenAIService
 
 # Configure logging
@@ -41,7 +43,7 @@ def ai_recommendations_page():
     )
 
     # Get available exercises
-    exercises = db.get_exercises()
+    exercises = db.get_exercises(user_id=st.session_state.user_id, include_custom=True)
 
     # Display user's profile summary
     st.subheader("Your Profile Summary")
@@ -106,6 +108,13 @@ def ai_recommendations_page():
         help="Choose whether cardio should be included in workout routines or recommended separately",
     )
 
+    # Routine name and description
+    routine_name = st.text_input("Routine Name", "AI Generated Workout Plan")
+    routine_description = st.text_area(
+        "Routine Description",
+        "A personalized workout plan based on your fitness goals and preferences.",
+    )
+
     if st.button("Generate Recommendations"):
         with st.spinner("Generating personalized recommendations..."):
             try:
@@ -136,16 +145,58 @@ def ai_recommendations_page():
                     # Display cardio recommendations separately
                     st.write("#### Cardio Recommendations")
                     st.write(recommendations["cardio_recommendations"])
+
+                    # Save recommendations to database
+                    db.save_ai_recommendations(
+                        st.session_state.user_id,
+                        recommendations,
+                        datetime.now(timezone.utc),
+                    )
                 else:
                     # Display combined recommendations
                     st.write(recommendations)
 
-                # Save recommendations to database
-                db.save_ai_recommendations(
-                    st.session_state.user_id,
-                    recommendations,
-                    datetime.now(timezone.utc),
-                )
+                    # Save recommendations to database
+                    db.save_ai_recommendations(
+                        st.session_state.user_id,
+                        recommendations,
+                        datetime.now(timezone.utc),
+                    )
+
+                # Add a button to save as routine
+                if st.button("Save as Routine"):
+                    with st.spinner("Generating structured routine..."):
+                        try:
+                            # Prepare context for routine generation
+                            routine_context = {
+                                "user_profile": user.model_dump(),
+                                "recent_workouts": workouts,
+                                "available_exercises": exercises,
+                            }
+
+                            # Generate routine using OpenAI
+                            routine = openai_service.generate_routine(
+                                routine_name, routine_description, routine_context
+                            )
+
+                            if routine:
+                                # Initialize Hevy API
+                                hevy_api = HevyAPI(user.hevy_api_key)
+
+                                # Save routine to Hevy
+                                result = hevy_api.create_routine(routine)
+
+                                if result:
+                                    st.success(
+                                        f"Routine '{routine_name}' saved successfully!"
+                                    )
+                                else:
+                                    st.error("Failed to save routine to Hevy.")
+                            else:
+                                st.error("Failed to generate structured routine.")
+                        except Exception as e:
+                            logger.error(f"Error saving routine: {str(e)}")
+                            st.error(f"Error saving routine: {str(e)}")
 
                 st.success("Recommendations generated successfully!")
             except Exception as e:

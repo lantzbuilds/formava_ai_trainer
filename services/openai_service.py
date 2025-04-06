@@ -345,25 +345,48 @@ class OpenAIService:
             preferred_duration = user_profile.get("preferred_duration", 60)
             active_injuries = user_profile.get("active_injuries", [])
 
-            # Determine equipment availability
-            equipment = "full gym"  # default
-            available_exercises = context.get("available_exercises", [])
-            equipment_list = []
-            for exercise in available_exercises:
-                for eq in exercise.get("equipment", []):
-                    if eq not in equipment_list:
-                        equipment_list.append(eq)
+            # Get target muscle groups from fitness goals
+            target_muscle_groups = set()
+            for goal in fitness_goals:
+                if goal == "strength":
+                    target_muscle_groups.update(
+                        ["chest", "back", "legs", "shoulders", "arms"]
+                    )
+                elif goal == "endurance":
+                    target_muscle_groups.update(["legs", "core"])
+                elif goal == "flexibility":
+                    target_muscle_groups.update(["core", "back", "legs"])
+                elif goal == "weight_loss":
+                    target_muscle_groups.update(
+                        ["chest", "back", "legs", "shoulders", "arms", "core"]
+                    )
 
-            if (
-                "barbell" in equipment_list
-                or "dumbbell" in equipment_list
-                or "machine" in equipment_list
-            ):
-                equipment = "full gym"
-            elif "dumbbell" in equipment_list or "resistance band" in equipment_list:
-                equipment = "home"
-            elif not equipment_list or all(eq == "bodyweight" for eq in equipment_list):
-                equipment = "bodyweight"
+            # Get relevant exercises using vector store
+            from services.vector_store import ExerciseVectorStore
+
+            vector_store = ExerciseVectorStore()
+
+            relevant_exercises = []
+            for muscle_group in target_muscle_groups:
+                exercises = vector_store.get_exercises_by_muscle_group(
+                    muscle_group=muscle_group, difficulty=experience_level, k=10
+                )
+                relevant_exercises.extend(exercises)
+
+            # Remove duplicates and limit to most relevant
+            seen_ids = set()
+            unique_exercises = []
+            for exercise in relevant_exercises:
+                if exercise["id"] not in seen_ids:
+                    seen_ids.add(exercise["id"])
+                    unique_exercises.append(exercise)
+
+            # Limit to 50 most relevant exercises
+            relevant_exercises = sorted(
+                unique_exercises,
+                key=lambda x: x.get("similarity_score", 0),
+                reverse=True,
+            )[:50]
 
             # Create prompt for OpenAI
             prompt = f"""
@@ -374,12 +397,11 @@ class OpenAIService:
             User Profile:
             - Experience Level: {experience_level}
             - Fitness Goals: {', '.join(fitness_goals)}
-            - Available Equipment: {equipment}
             - Medical Concerns: {', '.join(active_injuries) if active_injuries else 'None'}
             - Preferred Session Duration: {preferred_duration} minutes
 
-            Available Exercises:
-            {json.dumps(available_exercises, indent=2)}
+            Available Exercises (most relevant to your goals):
+            {json.dumps(relevant_exercises, indent=2)}
 
             Design a comprehensive workout routine that:
             1. Aligns with the user's specific fitness goals
@@ -449,7 +471,12 @@ class OpenAIService:
             content = response.choices[0].message.content
             routine = json.loads(content)
 
+            # Add name and description from parameters
+            routine["name"] = name
+            routine["description"] = description
+
             return routine
+
         except Exception as e:
             print(f"Error generating routine: {str(e)}")
             return None
