@@ -651,5 +651,9 @@ class HevyAPI:
                         import traceback
 
                         print(f"Traceback: {traceback.format_exc()}")
+            else:
+                print(
+                    f"Workout {workout.get('title', 'Untitled')} already exists, skipping"
+                )
 
         return synced_count

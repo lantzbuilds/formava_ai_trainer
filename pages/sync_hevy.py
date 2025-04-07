@@ -121,10 +121,40 @@ def sync_hevy_page():
 
                     if workouts:
                         # Save workouts to database
+                        new_workouts = 0
                         for workout in workouts:
-                            db.save_workout(workout, user_id=st.session_state.user_id)
+                            # Check if workout already exists by hevy_id
+                            if "id" in workout:
+                                existing = db.get_workout_by_hevy_id(workout["id"])
+                                if not existing:
+                                    # Format workout data properly with hevy_id
+                                    workout_data = {
+                                        "hevy_id": workout["id"],
+                                        "user_id": st.session_state.user_id,
+                                        "title": workout.get(
+                                            "title", "Untitled Workout"
+                                        ),
+                                        "description": workout.get("description", ""),
+                                        "start_time": workout.get("start_time"),
+                                        "end_time": workout.get("end_time"),
+                                        "updated_at": workout.get("updated_at"),
+                                        "created_at": workout.get("created_at"),
+                                        "exercises": workout.get("exercises", []),
+                                        "exercise_count": len(
+                                            workout.get("exercises", [])
+                                        ),
+                                        "last_synced": datetime.now().isoformat(),
+                                    }
 
-                        st.success(f"Successfully synced {len(workouts)} workouts!")
+                                    # Save the properly formatted workout
+                                    db.save_workout(workout_data)
+                                    new_workouts += 1
+                                else:
+                                    logger.info(
+                                        f"Workout {workout.get('title', 'Untitled')} already exists, skipping"
+                                    )
+
+                        st.success(f"Successfully synced {new_workouts} new workouts!")
                     else:
                         st.info("No new workouts found to sync.")
 
@@ -189,7 +219,8 @@ def sync_hevy_page():
         end_date = datetime.now(
             timezone.utc
         )  # Use current date as end date with UTC timezone
-        start_date = end_date - timedelta(days=365 * 10)  # Look back 10 years
+        # start_date = end_date - timedelta(days=365 * 10)  # Look back 10 years
+        start_date = end_date - timedelta(days=30)  # Look back 30 days
 
         workouts = db.get_user_workout_history(
             st.session_state.user_id,
@@ -201,7 +232,7 @@ def sync_hevy_page():
             st.write(f"Found {len(workouts)} workouts")
             for workout in workouts:
                 # Debug information
-                st.write(f"Workout keys: {list(workout.keys())}")
+                # st.write(f"Workout keys: {list(workout.keys())}")
 
                 # Safely get title and start_time with defaults
                 title = workout.get("title", "Untitled Workout")
