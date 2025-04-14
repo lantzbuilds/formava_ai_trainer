@@ -61,13 +61,14 @@ def workout_history_page():
                 {
                     "date": workout["start_time"],
                     "title": workout["title"],
-                    "exercises": workout["exercise_count"],
+                    "exercises": len(workout.get("exercises", [])),
                     "duration": workout.get("duration", 0),
                 }
             )
 
         df = pd.DataFrame(workout_data)
 
+        # TODO: fix workout frequency display
         # Display workout frequency
         st.subheader("Workout Frequency")
         fig = px.bar(
@@ -82,7 +83,7 @@ def workout_history_page():
                 st.write(
                     f"**Description:** {workout.get('description', 'No description')}"
                 )
-                st.write(f"**Exercises:** {workout['exercise_count']}")
+                st.write(f"**Exercises:** {len(workout.get('exercises', []))}")
                 if "duration" in workout:
                     st.write(f"**Duration:** {workout['duration']:.1f} minutes")
     else:
