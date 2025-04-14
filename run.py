@@ -41,8 +41,12 @@ def check_couchdb_running():
             ["docker", "ps", "--filter", "name=couchdb", "--format", "{{.Names}}"],
             capture_output=True,
             text=True,
+            timeout=5,  # Add a 5-second timeout
         )
         return "couchdb" in result.stdout
+    except subprocess.TimeoutExpired:
+        print("Timeout checking CouchDB container status")
+        return False
     except subprocess.CalledProcessError:
         return False
 
@@ -62,8 +66,12 @@ def check_couchdb_exists():
             ],
             capture_output=True,
             text=True,
+            timeout=5,  # Add a 5-second timeout
         )
         return "couchdb" in result.stdout
+    except subprocess.TimeoutExpired:
+        print("Timeout checking CouchDB container existence")
+        return False
     except subprocess.CalledProcessError:
         return False
 
@@ -117,10 +125,32 @@ def start_couchdb():
                 raise
 
 
+def check_docker_running():
+    """Check if Docker Desktop is running."""
+    try:
+        # Try to get Docker version - this will fail if Docker Desktop isn't running
+        result = subprocess.run(
+            ["docker", "version"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
+        return False
+
+
 def main():
     """Main function to run the application."""
     # Load environment variables
     load_dotenv()
+
+    # Check if Docker Desktop is running
+    if not check_docker_running():
+        print(
+            "Docker Desktop is not running. Please start Docker Desktop and try again."
+        )
+        return
 
     # Check and start CouchDB if needed
     start_couchdb()

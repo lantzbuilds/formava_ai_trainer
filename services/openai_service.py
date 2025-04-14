@@ -2,8 +2,8 @@ import json
 import os
 from typing import Any, Dict, List, Optional
 
-import openai
 from dotenv import load_dotenv
+from openai import OpenAI
 
 load_dotenv()
 
@@ -16,233 +16,7 @@ class OpenAIService:
         if not self.api_key:
             raise ValueError("OPENAI_API_KEY environment variable is not set")
 
-        openai.api_key = self.api_key
-
-    def get_workout_recommendations(self, context: Dict[str, Any]) -> str:
-        """
-        Get workout recommendations from OpenAI based on user profile and workout history.
-
-        Args:
-            context: Context including user profile, recent workouts, and available exercises
-
-        Returns:
-            String containing the recommendations
-        """
-        if not self.api_key:
-            print("OpenAI API key is not configured")
-            return (
-                "OpenAI API key is not configured. Please set it in the Profile page."
-            )
-
-        try:
-            # Extract user profile information
-            user_profile = context.get("user_profile", {})
-            experience_level = user_profile.get("experience_level", "beginner")
-            fitness_goals = user_profile.get("fitness_goals", [])
-            preferred_duration = user_profile.get("preferred_workout_duration", 60)
-            active_injuries = user_profile.get("injuries", [])
-
-            # Get cardio option
-            cardio_option = context.get("cardio_option", "Include in workout routines")
-
-            # Create prompt for OpenAI
-            prompt = f"""
-            You are an expert personal trainer with deep knowledge of exercise science and workout programming.
-
-            Create personalized workout recommendations based on the following information:
-
-            User Profile:
-            - Experience Level: {experience_level}
-            - Fitness Goals: {', '.join([g.get('value', '') for g in fitness_goals])}
-            - Preferred Session Duration: {preferred_duration} minutes
-            - Medical Concerns: {', '.join([i.get('description', '') for i in active_injuries if i.get('is_active', False)]) if active_injuries else 'None'}
-
-            Recent Workout History:
-            {json.dumps(context.get('recent_workouts', []), indent=2)}
-
-            Available Exercises:
-            {json.dumps(context.get('available_exercises', []), indent=2)}
-
-            Cardio Option: {cardio_option}
-
-            Design a comprehensive workout plan that:
-            1. Aligns with the user's specific fitness goals
-            2. Is appropriate for their experience level
-            3. Uses exercises from the available exercises list
-            4. Provides specific sets, reps, and intensity recommendations
-            5. Includes modifications for any injuries or limitations
-            6. Fits within the user's preferred workout duration
-            7. Incorporates progressive overload principles
-            8. Includes appropriate rest periods and recovery strategies
-            """
-
-            # Add specific instructions based on cardio option
-            if cardio_option == "Recommend separately":
-                prompt += """
-                
-                Format your response as a JSON object with the following structure:
-                {
-                    "workout_routine": "Detailed workout routine with exercises, sets, reps, etc.",
-                    "cardio_recommendations": "Detailed cardio recommendations including frequency, duration, intensity, and types of cardio"
-                }
-                
-                Make sure to provide comprehensive cardio recommendations that complement the workout routine.
-                """
-            else:
-                prompt += """
-                
-                Format your response as a detailed workout plan that includes both strength training and cardio recommendations.
-                """
-
-            # Call OpenAI API
-            response = openai.ChatCompletion.create(
-                model="gpt-4",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an expert personal trainer with deep knowledge of exercise science and workout programming.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.7,
-                max_tokens=2000,
-            )
-
-            # Extract and return response
-            content = response.choices[0].message.content
-
-            # If cardio option is "Recommend separately", try to parse as JSON
-            if cardio_option == "Recommend separately":
-                try:
-                    # Try to parse as JSON
-                    recommendations = json.loads(content)
-                    return recommendations
-                except json.JSONDecodeError:
-                    # If not valid JSON, return as is
-                    return content
-
-            return content
-        except Exception as e:
-            print(f"Error getting workout recommendations: {str(e)}")
-            return f"Error getting workout recommendations: {str(e)}"
-
-    def generate_workout_recommendation(
-        self,
-        user_profile: Dict[str, Any],
-        recent_workouts: List[Dict[str, Any]],
-        num_workouts: int = 1,
-    ) -> List[Dict[str, Any]]:
-        """
-        Generate personalized workout recommendations based on user profile and workout history.
-
-        Args:
-            user_profile: User profile dictionary
-            recent_workouts: List of recent workout dictionaries
-            num_workouts: Number of workout recommendations to generate
-
-        Returns:
-            List of workout recommendation dictionaries
-        """
-        # Prepare user profile information
-        profile_info = {
-            "age": user_profile.get("age"),
-            "sex": user_profile.get("sex"),
-            "height_cm": user_profile.get("height_cm"),
-            "weight_kg": user_profile.get("weight_kg"),
-            "fitness_goals": user_profile.get("fitness_goals", []),
-            "experience_level": user_profile.get("experience_level"),
-            "injuries": user_profile.get("injuries", []),
-        }
-
-        # Prepare workout history
-        workout_history = []
-        for workout in recent_workouts[:5]:  # Use last 5 workouts
-            workout_history.append(
-                {
-                    "title": workout.get("title"),
-                    "date": workout.get("start_time"),
-                    "exercises": [
-                        {
-                            "name": exercise.get("title"),
-                            "sets": len(exercise.get("sets", [])),
-                            "reps": (
-                                exercise.get("sets", [{}])[0].get("reps")
-                                if exercise.get("sets")
-                                else None
-                            ),
-                            "weight": (
-                                exercise.get("sets", [{}])[0].get("weight_kg")
-                                if exercise.get("sets")
-                                else None
-                            ),
-                        }
-                        for exercise in workout.get("exercises", [])
-                    ],
-                }
-            )
-
-        # Create the prompt
-        prompt = f"""
-        I need a personalized workout recommendation based on the following user profile and workout history:
-        
-        User Profile:
-        {json.dumps(profile_info, indent=2)}
-        
-        Recent Workout History:
-        {json.dumps(workout_history, indent=2)}
-        
-        Please generate {num_workouts} workout recommendations in the following JSON format:
-        {{
-            "workouts": [
-                {{
-                    "title": "Workout Title",
-                    "description": "Brief description of the workout",
-                    "exercises": [
-                        {{
-                            "name": "Exercise Name",
-                            "sets": 3,
-                            "reps": 10,
-                            "weight": "80% of 1RM",
-                            "notes": "Form tips or variations"
-                        }}
-                    ]
-                }}
-            ]
-        }}
-        
-        The recommendations should be appropriate for the user's experience level and fitness goals, and should take into account any injuries or limitations.
-        """
-
-        try:
-            response = openai.ChatCompletion.create(
-                model="gpt-4",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an expert personal trainer with deep knowledge of exercise science and workout programming.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.7,
-                max_tokens=2000,
-            )
-
-            # Parse the response
-            content = response.choices[0].message.content
-
-            # Extract JSON from the response
-            json_start = content.find("{")
-            json_end = content.rfind("}") + 1
-
-            if json_start >= 0 and json_end > json_start:
-                json_str = content[json_start:json_end]
-                return json.loads(json_str)
-            else:
-                print("Could not extract JSON from response")
-                return {"workouts": []}
-        except Exception as e:
-            print(f"Error generating recommendations: {e}")
-            return {"workouts": []}
+        self.client = OpenAI(api_key=self.api_key)
 
     def analyze_workout_form(
         self, exercise_name: str, description: str
@@ -279,7 +53,7 @@ class OpenAIService:
         """
 
         try:
-            response = openai.ChatCompletion.create(
+            response = self.client.chat.completions.create(
                 model="gpt-4",
                 messages=[
                     {
@@ -344,6 +118,7 @@ class OpenAIService:
             fitness_goals = user_profile.get("fitness_goals", [])
             preferred_duration = user_profile.get("preferred_duration", 60)
             active_injuries = user_profile.get("active_injuries", [])
+            workout_schedule = user_profile.get("workout_schedule", [])
 
             # Get target muscle groups from fitness goals
             target_muscle_groups = set()
@@ -399,62 +174,125 @@ class OpenAIService:
             - Fitness Goals: {', '.join(fitness_goals)}
             - Medical Concerns: {', '.join(active_injuries) if active_injuries else 'None'}
             - Preferred Session Duration: {preferred_duration} minutes
+            - Preferred Workout Schedule: {', '.join(workout_schedule) if workout_schedule else 'Not specified'}
 
             Available Exercises (most relevant to your goals):
             {json.dumps(relevant_exercises, indent=2)}
 
-            Design a comprehensive workout routine that:
-            1. Aligns with the user's specific fitness goals
-            2. Is appropriate for their experience level
-            3. Uses exercises from the available exercises list
-            4. Provides specific sets, reps, and intensity recommendations
-            5. Includes modifications for any injuries or limitations
-            6. Fits within the user's preferred workout duration
-            7. Incorporates progressive overload principles
-            8. Includes appropriate rest periods and recovery strategies
+            Requirements:
+            1. Create a weekly routine that matches the user's preferred workout schedule
+            2. Each session should be approximately {preferred_duration} minutes long
+            3. Include enough exercises per session to fill the time appropriately
+            4. Design a balanced program that:
+               - Aligns with the user's specific fitness goals
+               - Is appropriate for their experience level
+               - Uses exercises from the available exercises list
+               - Provides specific sets, reps, and intensity recommendations
+               - Includes modifications for any injuries or limitations
+               - Incorporates progressive overload principles
+               - Includes appropriate rest periods between sets
+            5. Include active recovery recommendations for non-workout days
+            6. Ensure proper exercise selection and volume to fill the entire session duration
 
             Format your response as a JSON object with the following structure:
             {{
-                "name": "string",
-                "description": "string",
-                "weeks": [
-                    {{
-                        "week_number": number,
-                        "rpe": number,
-                        "days": [
+                "human_readable": {{
+                    "title": "string",
+                    "description": "string",
+                    "warm_up": {{
+                        "duration_minutes": number,
+                        "exercises": [
                             {{
-                                "day_number": number,
-                                "focus": "string",
-                                "exercises": [
-                                    {{
-                                        "exercise_id": "string",
-                                        "name": "string",
-                                        "sets": number,
-                                        "reps": "string",
-                                        "rpe": number,
-                                        "notes": "string",
-                                        "modifications": ["string"]
-                                    }}
-                                ],
-                                "cardio": {{
-                                    "type": "string",
-                                    "duration": "string",
-                                    "intensity": "string"
-                                }}
+                                "name": "string",
+                                "duration": "string",
+                                "notes": "string"
                             }}
-                        ],
-                        "deload_guidance": "string"
+                        ]
+                    }},
+                    "strength_training": {{
+                        "duration_minutes": number,
+                        "exercises": [
+                            {{
+                                "name": "string",
+                                "sets": number,
+                                "reps": number,
+                                "rest_time": "string",
+                                "notes": "string"
+                            }}
+                        ]
+                    }},
+                    "cardio": {{
+                        "duration_minutes": number,
+                        "exercises": [
+                            {{
+                                "name": "string",
+                                "duration": "string",
+                                "intensity": "string",
+                                "notes": "string"
+                            }}
+                        ]
+                    }},
+                    "cool_down": {{
+                        "duration_minutes": number,
+                        "exercises": [
+                            {{
+                                "name": "string",
+                                "duration": "string",
+                                "notes": "string"
+                            }}
+                        ]
                     }}
-                ],
-                "estimated_duration": number,
-                "difficulty": "string",
-                "target_muscle_groups": ["string"],
-                "equipment_needed": ["string"]
+                }},
+                "hevy_api": {{
+                    "title": "string",
+                    "description": "string",
+                    "sessions": [
+                        {{
+                            "title": "string",
+                            "duration_minutes": number,
+                            "exercises": [
+                                {{
+                                    "title": "string",
+                                    "notes": "string",
+                                    "sets": [
+                                        {{
+                                            "reps": number,
+                                            "weight_kg": number,
+                                            "rest_seconds": number
+                                        }}
+                                    ]
+                                }}
+                            ]
+                        }}
+                    ],
+                    "rest_days": [
+                        {{
+                            "title": "string",
+                            "description": "string"
+                        }}
+                    ]
+                }}
             }}
+
+            Important Notes:
+            - Each session should have enough exercises to properly fill the {preferred_duration} minute duration
+            - Include appropriate rest periods between sets (typically 60-90 seconds)
+            - Ensure exercises are properly balanced across muscle groups
+            - Include warm-up and cool-down recommendations in the session descriptions
+            - Make sure the total volume (sets × reps × weight) is appropriate for the experience level
+            - The number of sessions should match the user's preferred workout schedule
+            - For the human_readable format, include detailed notes and explanations for each exercise
+            - For the hevy_api format, ensure the structure matches the Hevy API specifications exactly
+            - The human_readable format should be a detailed, well-formatted text that explains the reasoning behind each exercise and recommendation
+            - Ensure consistency between formats:
+              * Use the same title and description in both formats
+              * For strength exercises, include the same number of sets in both formats
+              * For cardio exercises, convert duration strings to appropriate rest_seconds in the Hevy format
+              * Maintain the same exercise order and structure in both formats
             """
 
             # Call OpenAI API
-            response = openai.ChatCompletion.create(
+            response = self.client.chat.completions.create(
                 model="gpt-4",
                 messages=[
                     {
@@ -471,9 +309,16 @@ class OpenAIService:
             content = response.choices[0].message.content
             routine = json.loads(content)
 
-            # Add name and description from parameters
-            routine["name"] = name
-            routine["description"] = description
+            # Print the JSON version for development
+            print("\nGenerated Routine (JSON format):")
+            print(json.dumps(routine["hevy_api"], indent=2))
+            print("\n")
+
+            # Add name and description from parameters to both formats
+            routine["hevy_api"]["name"] = name
+            routine["hevy_api"]["description"] = description
+            routine["human_readable"]["title"] = name
+            routine["human_readable"]["description"] = description
 
             return routine
 
@@ -531,7 +376,7 @@ class OpenAIService:
             """
 
             # Call OpenAI API
-            response = openai.ChatCompletion.create(
+            response = self.client.chat.completions.create(
                 model="gpt-4",
                 messages=[
                     {"role": "system", "content": "You are an AI personal trainer."},

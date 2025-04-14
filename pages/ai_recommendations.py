@@ -12,6 +12,7 @@ from config.database import Database
 from models.user import UserProfile
 from services.hevy_api import HevyAPI
 from services.openai_service import OpenAIService
+from services.vector_store import ExerciseVectorStore
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -20,6 +21,7 @@ logger = logging.getLogger(__name__)
 # Initialize services
 db = Database()
 openai_service = OpenAIService()
+vector_store = ExerciseVectorStore()
 
 
 def ai_recommendations_page():
@@ -68,7 +70,20 @@ def ai_recommendations_page():
     st.subheader("Recent Workout History")
     if workouts:
         workout_count = len(workouts)
-        total_exercises = sum(w["exercise_count"] for w in workouts)
+        total_exercises = 0
+        for workout in workouts:
+            try:
+                # Try to get exercise_count first
+                if "exercise_count" in workout:
+                    total_exercises += workout["exercise_count"]
+                else:
+                    # Fall back to counting exercises
+                    total_exercises += len(workout.get("exercises", []))
+            except Exception as e:
+                logger.warning(f"Error counting exercises for workout: {str(e)}")
+                # If both methods fail, skip this workout
+                continue
+
         avg_exercises = total_exercises / workout_count if workout_count > 0 else 0
         st.write(f"**Workouts in last 30 days:** {workout_count}")
         st.write(f"**Average exercises per workout:** {avg_exercises:.1f}")
@@ -118,85 +133,122 @@ def ai_recommendations_page():
     if st.button("Generate Recommendations"):
         with st.spinner("Generating personalized recommendations..."):
             try:
+                # Get target muscle groups from fitness goals
+                target_muscle_groups = set()
+                for goal in user.fitness_goals:
+                    if goal.value == "strength":
+                        target_muscle_groups.update(
+                            ["chest", "back", "legs", "shoulders", "arms"]
+                        )
+                    elif goal.value == "endurance":
+                        target_muscle_groups.update(["legs", "core"])
+                    elif goal.value == "flexibility":
+                        target_muscle_groups.update(["core", "back", "legs"])
+                    elif goal.value == "weight_loss":
+                        target_muscle_groups.update(
+                            ["chest", "back", "legs", "shoulders", "arms", "core"]
+                        )
+
+                # Get relevant exercises using vector store
+                relevant_exercises = []
+                for muscle_group in target_muscle_groups:
+                    exercises = vector_store.get_exercises_by_muscle_group(
+                        muscle_group=muscle_group,
+                        difficulty=user.experience_level,
+                        k=10,
+                    )
+                    relevant_exercises.extend(exercises)
+
+                # Remove duplicates and limit to most relevant
+                seen_ids = set()
+                unique_exercises = []
+                for exercise in relevant_exercises:
+                    if exercise["id"] not in seen_ids:
+                        seen_ids.add(exercise["id"])
+                        unique_exercises.append(exercise)
+
+                # Limit to 50 most relevant exercises
+                relevant_exercises = sorted(
+                    unique_exercises,
+                    key=lambda x: x.get("similarity_score", 0),
+                    reverse=True,
+                )[:50]
+
                 # Prepare context for AI
                 context = {
-                    "user_profile": user.model_dump(),
+                    "user_profile": {
+                        "experience_level": user.experience_level,
+                        "fitness_goals": [goal.value for goal in user.fitness_goals],
+                        "preferred_workout_duration": user.preferred_workout_duration,
+                        "injuries": (
+                            [injury.model_dump() for injury in user.injuries]
+                            if user.injuries
+                            else []
+                        ),
+                    },
                     "recent_workouts": workouts,
-                    "available_exercises": exercises,
+                    "available_exercises": relevant_exercises,
                     "cardio_option": cardio_option,
                 }
 
                 # Get recommendations from OpenAI
-                recommendations = openai_service.get_workout_recommendations(context)
+                recommendations = openai_service.generate_routine(
+                    name="AI-Generated Workout",
+                    description="Personalized workout routine based on your profile and goals",
+                    context=context,
+                )
 
                 # Display recommendations
                 st.write("### Personalized Workout Plan")
 
-                # Check if recommendations contain separate cardio section
-                if (
-                    isinstance(recommendations, dict)
-                    and "cardio_recommendations" in recommendations
-                ):
-                    # Display workout routine
-                    if "workout_routine" in recommendations:
-                        st.write("#### Workout Routine")
-                        st.write(recommendations["workout_routine"])
-
-                    # Display cardio recommendations separately
-                    st.write("#### Cardio Recommendations")
-                    st.write(recommendations["cardio_recommendations"])
-
-                    # Save recommendations to database
-                    db.save_ai_recommendations(
-                        st.session_state.user_id,
-                        recommendations,
-                        datetime.now(timezone.utc),
-                    )
+                if recommendations and "human_readable" in recommendations:
+                    # Display human-readable format
+                    st.write(recommendations["human_readable"])
                 else:
-                    # Display combined recommendations
-                    st.write(recommendations)
-
-                    # Save recommendations to database
-                    db.save_ai_recommendations(
-                        st.session_state.user_id,
-                        recommendations,
-                        datetime.now(timezone.utc),
+                    st.error(
+                        "Failed to generate recommendations in the expected format."
                     )
 
-                # Add a button to save as routine
-                if st.button("Save as Routine"):
-                    with st.spinner("Generating structured routine..."):
-                        try:
-                            # Prepare context for routine generation
-                            routine_context = {
-                                "user_profile": user.model_dump(),
-                                "recent_workouts": workouts,
-                                "available_exercises": exercises,
-                            }
+                # Save recommendations to database
+                db.save_document(
+                    {
+                        "type": "ai_recommendations",
+                        "user_id": st.session_state.user_id,
+                        "recommendations": recommendations,
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
 
-                            # Generate routine using OpenAI
-                            routine = openai_service.generate_routine(
-                                routine_name, routine_description, routine_context
-                            )
-
-                            if routine:
+                # Add buttons for saving to Hevy or regenerating
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("Save to Hevy"):
+                        with st.spinner("Saving routine to Hevy..."):
+                            try:
                                 # Initialize Hevy API
                                 hevy_api = HevyAPI(user.hevy_api_key)
 
-                                # Save routine to Hevy
-                                result = hevy_api.create_routine(routine)
-
-                                if result:
-                                    st.success(
-                                        f"Routine '{routine_name}' saved successfully!"
+                                if recommendations and "hevy_api" in recommendations:
+                                    # Save routine to Hevy
+                                    result = hevy_api.create_routine(
+                                        recommendations["hevy_api"]
                                     )
+
+                                    if result:
+                                        st.success(
+                                            "Routine saved successfully to Hevy!"
+                                        )
+                                    else:
+                                        st.error("Failed to save routine to Hevy.")
                                 else:
-                                    st.error("Failed to save routine to Hevy.")
-                            else:
-                                st.error("Failed to generate structured routine.")
-                        except Exception as e:
-                            logger.error(f"Error saving routine: {str(e)}")
-                            st.error(f"Error saving routine: {str(e)}")
+                                    st.error("No Hevy API compatible routine found.")
+                            except Exception as e:
+                                logger.error(f"Error saving routine to Hevy: {str(e)}")
+                                st.error(f"Error saving routine to Hevy: {str(e)}")
+
+                with col2:
+                    if st.button("Regenerate Recommendations"):
+                        st.rerun()
 
                 st.success("Recommendations generated successfully!")
             except Exception as e:

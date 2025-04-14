@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 db = Database()
 
 
+@st.cache_data(ttl=0)
 def workout_history_page():
     """Display the workout history page."""
     st.title("Workout History")

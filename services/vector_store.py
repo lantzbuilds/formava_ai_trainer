@@ -24,13 +24,28 @@ class ExerciseVectorStore:
         Args:
             persist_directory: Directory to persist the vector store
         """
-        self.embeddings = OpenAIEmbeddings()
-        self.vectorstore = Chroma(
-            collection_name="exercises",
-            embedding_function=self.embeddings,
-            persist_directory=persist_directory,
-        )
-        logger.info(f"Initialized vector store at {persist_directory}")
+        self.persist_directory = persist_directory
+        self._embeddings = None
+        self._vectorstore = None
+        logger.info(f"Vector store initialized (lazy loading)")
+
+    @property
+    def embeddings(self):
+        """Lazy load the embeddings model."""
+        if self._embeddings is None:
+            self._embeddings = OpenAIEmbeddings()
+        return self._embeddings
+
+    @property
+    def vectorstore(self):
+        """Lazy load the vector store."""
+        if self._vectorstore is None:
+            self._vectorstore = Chroma(
+                collection_name="exercises",
+                embedding_function=self.embeddings,
+                persist_directory=self.persist_directory,
+            )
+        return self._vectorstore
 
     def add_exercises(self, exercises: List[Dict[str, Any]]) -> None:
         """
