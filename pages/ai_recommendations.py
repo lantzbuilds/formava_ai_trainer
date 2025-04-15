@@ -201,6 +201,7 @@ def ai_recommendations_page():
 
                 # Prepare context for AI
                 context = {
+                    "user_id": st.session_state.user_id,
                     "user_profile": {
                         "experience_level": user.experience_level,
                         "fitness_goals": [goal.value for goal in user.fitness_goals],

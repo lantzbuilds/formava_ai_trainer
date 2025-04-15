@@ -9,11 +9,13 @@ import requests
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from config.database import Database
 from services.vector_store import ExerciseVectorStore
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
+# Load environment variables
 load_dotenv()
 
 
@@ -380,63 +382,84 @@ class OpenAIService:
             return f"{start_date.strftime('%b %d')} - {end_date.strftime('%b %d, %Y')}"
 
     def generate_routine_folder(
-        self,
-        name: str,
-        description: str,
-        context: Dict[str, Any],
-        period: Literal["week", "month"] = "week",
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Generate a routine folder with multiple workout routines based on popular splits.
+        self, name: str, description: str, context: dict, period: str = "week"
+    ) -> Optional[dict]:
+        """Generate a routine folder with multiple workout routines based on popular splits.
 
         Args:
             name: Name of the routine folder
             description: Description of the routine folder
-            context: Context including user profile and available exercises
-            period: Time period for the routine ("week" or "month")
+            context: Dictionary containing user profile and other context
+            period: Time period for the routines ("week" or "month")
 
         Returns:
-            Dictionary containing the generated routine folder or None if failed
+            Dictionary containing the routine folder structure or None if generation fails
         """
         try:
-            # Extract user profile information
+            # Get user's Hevy API key from context
+            user_id = context.get("user_id")
+            if not user_id:
+                logger.error("No user_id found in context")
+                return None
+
+            # Get user document from database
+            db = Database()
+            user_doc = db.get_document(user_id)
+            if not user_doc:
+                logger.error(f"User document not found for user_id: {user_id}")
+                return None
+
+            # Get the encrypted API key from the user's Hevy credentials
+            hevy_credentials = user_doc.get("hevy_credentials", {})
+            hevy_api_key = hevy_credentials.get("api_key")
+
+            if not hevy_api_key:
+                logger.error(
+                    f"No Hevy API key found in credentials for user_id: {user_id}"
+                )
+                return None
+
+            logger.debug(f"Retrieved Hevy API key for user {user_id}")
+
+            # Create the routine folder via HevyAPI
+            folder_data = {"routine_folder": {"title": name}}
+
+            # Send POST request to create the folder
+            response = requests.post(
+                "https://api.hevyapp.com/v1/routine_folders",
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {hevy_api_key}",
+                },
+                json=folder_data,
+            )
+
+            if response.status_code != 200:
+                logger.error(
+                    f"Error creating routine folder via HevyAPI: {response.status_code} {response.text}"
+                )
+                return None
+
+            folder_response = response.json()
+            if "id" not in folder_response:
+                logger.error("No folder ID in HevyAPI response")
+                return None
+
+            folder_id = folder_response["id"]
+            logger.info(f"Created routine folder with ID: {folder_id}")
+
+            # Extract user profile from context
             user_profile = context.get("user_profile", {})
             experience_level = user_profile.get("experience_level", "beginner")
             fitness_goals = user_profile.get("fitness_goals", [])
-            preferred_duration = user_profile.get("preferred_duration", 60)
-            workout_schedule = user_profile.get("workout_schedule", [])
-            days_per_week = len(workout_schedule)
+            preferred_duration = user_profile.get("preferred_workout_duration", 60)
+            injuries = user_profile.get("injuries", [])
+            workout_schedule = user_profile.get("workout_schedule", {})
+            days_per_week = workout_schedule.get("days_per_week", 3)
 
             # Get date range and create folder title
             date_range = self._get_date_range(period)
             folder_title = f"{name} - {date_range}"
-
-            # First, create the routine folder via HevyAPI
-            folder_data = {"routine_folder": {"title": folder_title}}
-
-            try:
-                response = requests.post(
-                    "https://api.hevyapp.com/v1/routine_folder",
-                    headers={
-                        "Authorization": f"Bearer {os.getenv('HEVY_API_KEY')}",
-                        "Content-Type": "application/json",
-                    },
-                    json=folder_data,
-                )
-                response.raise_for_status()
-                folder_response = response.json()
-
-                # Extract folder ID from response
-                folder_id = folder_response.get("id")
-                if not folder_id:
-                    logger.error("Failed to get folder ID from HevyAPI response")
-                    return None
-
-                logger.info(f"Created routine folder with ID: {folder_id}")
-
-            except requests.exceptions.RequestException as e:
-                logger.error(f"Error creating routine folder via HevyAPI: {str(e)}")
-                return None
 
             # Determine appropriate split based on days per week
             if days_per_week == 3:
