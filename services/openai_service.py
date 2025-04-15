@@ -30,8 +30,15 @@ class OpenAIService:
             raise ValueError("OPENAI_API_KEY environment variable is not set")
 
         self.client = OpenAI(api_key=self.api_key)
-        self.vector_store = ExerciseVectorStore()
+        self._vector_store = None
         self._hevy_api = None
+
+    @property
+    def vector_store(self):
+        """Lazy load the vector store."""
+        if self._vector_store is None:
+            self._vector_store = ExerciseVectorStore()
+        return self._vector_store
 
     # TODO: Should user be retrieved in __init__ and HevyAPI be initialized there?
     def _get_hevy_api(self, encrypted_api_key: str) -> HevyAPI:
@@ -164,11 +171,9 @@ class OpenAIService:
             workout_schedule = user_profile.get("workout_schedule", [])
             folder_id = context.get("folder_id")
 
-            # Get relevant exercises based on user's goals and experience level
+            # Get relevant exercises based on user's goals and focus
             relevant_exercises = []
             try:
-                vector_store = ExerciseVectorStore()
-
                 # Get exercises based on fitness goals and focus
                 focus = description.split("workout")[0].strip().lower()
 
@@ -176,13 +181,17 @@ class OpenAIService:
                 if focus == "full body":
                     # Define major muscle groups to target
                     muscle_groups = ["chest", "back", "legs", "shoulders", "arms"]
+
+                    # Search for exercises targeting each muscle group
                     for muscle_group in muscle_groups:
-                        # Search for exercises targeting each muscle group
                         query = f"Primary muscles: {muscle_group}"
-                        exercises = vector_store.search_exercises(
+                        logger.info(
+                            f"Searching for {muscle_group} exercises with query: {query}"
+                        )
+
+                        exercises = self.vector_store.search_exercises(
                             query,
                             k=5,  # Get 5 exercises per muscle group
-                            filter_criteria={"difficulty": experience_level},
                         )
 
                         # Add unique exercises to relevant_exercises
@@ -199,18 +208,23 @@ class OpenAIService:
                                             "muscle_groups", []
                                         ),
                                         "equipment": exercise.get("equipment", []),
-                                        "difficulty": exercise.get(
-                                            "difficulty", "beginner"
-                                        ),
                                     }
                                 )
+
+                    logger.info(
+                        f"Found {len(relevant_exercises)} exercises for full body routine"
+                    )
+                    logger.info(
+                        f"Exercises by muscle group: {[e['title'] for e in relevant_exercises]}"
+                    )
                 else:
                     # For other workout types, use the existing search approach
-                    search_query = f"{focus} exercises for {experience_level} level"
-                    exercises = vector_store.search_exercises(
+                    search_query = f"Primary muscles: {focus}"
+                    logger.info(f"Searching for exercises with query: {search_query}")
+
+                    exercises = self.vector_store.search_exercises(
                         search_query,
                         k=20,
-                        filter_criteria={"difficulty": experience_level},
                     )
 
                     # Convert to the format we need
@@ -225,75 +239,13 @@ class OpenAIService:
                                     "description": exercise.get("description", ""),
                                     "muscle_groups": exercise.get("muscle_groups", []),
                                     "equipment": exercise.get("equipment", []),
-                                    "difficulty": exercise.get(
-                                        "difficulty", "beginner"
-                                    ),
                                 }
                             )
 
-                # If no exercises found, get some general exercises
-                if not relevant_exercises:
-                    if focus == "full body":
-                        # For full body, try a more general search for each muscle group
-                        for muscle_group in muscle_groups:
-                            exercises = vector_store.search_exercises(
-                                f"exercises targeting {muscle_group}",
-                                k=5,
-                                filter_criteria={"difficulty": experience_level},
-                            )
-                            for exercise in exercises:
-                                if exercise.get("name") not in [
-                                    e.get("name") for e in relevant_exercises
-                                ]:
-                                    relevant_exercises.append(
-                                        {
-                                            "title": exercise.get("name"),
-                                            "exercise_template_id": exercise.get("id"),
-                                            "description": exercise.get(
-                                                "description", ""
-                                            ),
-                                            "muscle_groups": exercise.get(
-                                                "muscle_groups", []
-                                            ),
-                                            "equipment": exercise.get("equipment", []),
-                                            "difficulty": exercise.get(
-                                                "difficulty", "beginner"
-                                            ),
-                                        }
-                                    )
-                    else:
-                        # For other workout types, use the existing fallback
-                        exercises = vector_store.search_exercises(
-                            f"general {focus} exercises",
-                            k=20,
-                            filter_criteria={"difficulty": experience_level},
-                        )
-                        for exercise in exercises:
-                            if exercise.get("name") not in [
-                                e.get("name") for e in relevant_exercises
-                            ]:
-                                relevant_exercises.append(
-                                    {
-                                        "title": exercise.get("name"),
-                                        "exercise_template_id": exercise.get("id"),
-                                        "description": exercise.get("description", ""),
-                                        "muscle_groups": exercise.get(
-                                            "muscle_groups", []
-                                        ),
-                                        "equipment": exercise.get("equipment", []),
-                                        "difficulty": exercise.get(
-                                            "difficulty", "beginner"
-                                        ),
-                                    }
-                                )
-
                 logger.info(
-                    f"Found {len(relevant_exercises)} relevant exercises for {focus} routine"
+                    f"Using {len(relevant_exercises)} unique exercises for routine"
                 )
-                if focus == "full body":
-                    logger.info(
-                        f"Exercises by muscle group: {[e['title'] for e in relevant_exercises]}"
-                    )
+                context["relevant_exercises"] = relevant_exercises
 
             except Exception as e:
                 logger.error(f"Error getting relevant exercises: {str(e)}")
@@ -406,6 +358,9 @@ class OpenAIService:
                 json_str = content[json_start:json_end]
                 try:
                     routine = json.loads(json_str)
+                    # Log the generated routine
+                    logger.info("Generated routine JSON:")
+                    logger.info(json.dumps(routine, indent=2))
 
                     # Validate the required fields
                     if not all(
@@ -535,6 +490,7 @@ class OpenAIService:
             folder_title = f"{name} - {date_range}"
 
             # Determine appropriate split based on days per week
+            # TODO: splits should be chosen by the user
             if days_per_week == 3:
                 # Full Body or Upper/Lower split
                 if experience_level == "beginner":
@@ -587,69 +543,7 @@ class OpenAIService:
                 routine_context = context.copy()
                 routine_context["folder_id"] = folder_id
 
-                # Get relevant exercises for this routine's focus
-                try:
-                    vector_store = ExerciseVectorStore()
-                    focus = (
-                        routine["focus"].split("(")[0].strip().lower()
-                    )  # Remove any parenthetical notes
-                    search_query = f"{focus} exercises for {experience_level} level"
-                    logger.info(f"Searching for exercises with query: {search_query}")
-
-                    exercises = vector_store.search_exercises(
-                        search_query,
-                        k=20,
-                        filter_criteria={"difficulty": experience_level},
-                    )
-                    logger.info(
-                        f"Found {len(exercises)} relevant exercises for {focus}"
-                    )
-
-                    if exercises:
-                        logger.debug(
-                            f"Relevant exercises: {[e.get('name') for e in exercises]}"
-                        )
-                    else:
-                        logger.warning(
-                            f"No exercises found for {focus}, trying general search"
-                        )
-                        exercises = vector_store.search_exercises(
-                            f"general {focus} exercises",
-                            k=20,
-                            filter_criteria={"difficulty": experience_level},
-                        )
-                        logger.info(
-                            f"Found {len(exercises)} general exercises for {focus}"
-                        )
-
-                    # Convert to the format we need
-                    relevant_exercises = []
-                    for exercise in exercises:
-                        if exercise.get("name") not in [
-                            e.get("name") for e in relevant_exercises
-                        ]:
-                            relevant_exercises.append(
-                                {
-                                    "title": exercise.get("name"),
-                                    "exercise_template_id": exercise.get("id"),
-                                    "description": exercise.get("description", ""),
-                                    "muscle_groups": exercise.get("muscle_groups", []),
-                                    "equipment": exercise.get("equipment", []),
-                                    "difficulty": exercise.get(
-                                        "difficulty", "beginner"
-                                    ),
-                                }
-                            )
-
-                    logger.info(
-                        f"Using {len(relevant_exercises)} unique exercises for routine"
-                    )
-                    routine_context["relevant_exercises"] = relevant_exercises
-
-                except Exception as e:
-                    logger.error(f"Error getting relevant exercises: {str(e)}")
-                    continue
-
+                # Generate the routine using generate_routine
                 day_routine = self.generate_routine(
                     name=f"{routine['day']} {routine['focus']}",
                     description=f"{routine['focus']} workout for {routine['day']}",

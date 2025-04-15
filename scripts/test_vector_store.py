@@ -32,7 +32,7 @@ def test_vector_store():
             logger.info(f"Found {len(exercises)} exercises for {muscle_group}")
             for exercise in exercises:
                 logger.info(
-                    f"- {exercise['name']} (Score: {exercise['similarity_score']:.2f})"
+                    f"- {exercise['title']} (Score: {exercise['similarity_score']:.2f})"
                 )
                 logger.info(
                     f"  Primary muscles: {[mg['name'] for mg in exercise['muscle_groups'] if mg['is_primary']]}"

@@ -584,7 +584,7 @@ class Database:
                 exercise = row.doc
                 has_embedding = "embedding" in exercise
                 logger.info(
-                    f"Retrieved exercise by Hevy ID {hevy_id}: {exercise.get('name', 'Unknown')} (Has embedding: {has_embedding})"
+                    f"Retrieved exercise by Hevy ID {hevy_id}: {exercise.get('title', 'Unknown')} (Has embedding: {has_embedding})"
                 )
                 return exercise
             logger.info(f"No exercise found with Hevy ID: {hevy_id}")
@@ -905,3 +905,34 @@ class Database:
         except Exception as e:
             logger.error(f"Error getting custom exercises: {str(e)}")
             return []
+
+    def recreate_exercises_design_document(self):
+        """Recreate the exercises design document to update views."""
+        try:
+            # Delete existing exercises design document if it exists
+            if "_design/exercises" in self.db:
+                logger.info("Deleting existing exercises design document")
+                doc = self.db["_design/exercises"]
+                self.db.delete(doc)
+
+            # Create new exercises design document
+            logger.info("Creating new exercises design document")
+            self.db.save(
+                {
+                    "_id": "_design/exercises",
+                    "views": {
+                        "by_hevy_id": {
+                            "map": "function(doc) { if (doc.type === 'exercise') { emit(doc.hevy_id, {id: doc._id, title: doc.title, muscle_groups: doc.muscle_groups, equipment: doc.equipment}); } }"
+                        },
+                        "by_muscle_group": {
+                            "map": "function(doc) { if (doc.type === 'exercise' && doc.muscle_groups) { doc.muscle_groups.forEach(function(mg) { emit(mg.name, {id: doc._id, title: doc.title, is_primary: mg.is_primary, equipment: doc.equipment}); }); } }"
+                        },
+                        "all": {
+                            "map": "function(doc) { if (doc.type === 'exercise') { emit(doc._id, {id: doc._id, title: doc.title, muscle_groups: doc.muscle_groups, equipment: doc.equipment}); } }"
+                        },
+                    },
+                }
+            )
+            logger.info("Exercises design document recreated successfully")
+        except Exception as e:
+            logger.error(f"Error recreating exercises design document: {str(e)}")

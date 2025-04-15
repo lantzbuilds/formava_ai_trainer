@@ -436,7 +436,7 @@ class HevyAPI:
                 # Create exercise data
                 exercise_data = {
                     "id": template.get("id", ""),
-                    "name": template.get("title", ""),
+                    "title": template.get("title", ""),
                     "description": "",
                     "instructions": "",
                     "muscle_groups": muscle_groups,

@@ -35,7 +35,7 @@ class Exercise(BaseModel):
     """
 
     id: str
-    name: str
+    title: str
     description: Optional[str] = None
     instructions: Optional[str] = None
     muscle_groups: List[ExerciseMuscle] = Field(default_factory=list)
@@ -90,7 +90,7 @@ class Exercise(BaseModel):
 
         return cls(
             id=data.get("id", ""),
-            name=data.get("name", ""),
+            title=data.get("title", ""),
             description=data.get("description", ""),
             instructions=data.get("instructions", ""),
             muscle_groups=muscle_groups,
