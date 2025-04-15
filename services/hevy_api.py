@@ -443,6 +443,7 @@ class HevyAPI:
                     "is_custom": template.get("is_custom", False),
                     "created_at": "",
                     "updated_at": "",
+                    "exercise_template_id": template.get("id", ""),
                 }
 
                 exercises_data.append(exercise_data)

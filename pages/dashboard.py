@@ -51,6 +51,7 @@ def dashboard_page():
     if active_injuries:
         st.subheader("Active Injuries")
         for injury in active_injuries:
+            # TODO: severity is displaying as an enum, need to display the actual severity
             st.warning(
                 f"**{injury.description}** ({injury.body_part}) - {injury.severity} severity"
             )

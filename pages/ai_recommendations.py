@@ -134,6 +134,7 @@ def ai_recommendations_page():
         with st.spinner("Generating personalized recommendations..."):
             try:
                 # Get target muscle groups from fitness goals
+                # TODO: reevaluate this mapping of muscle groups to fitness goals
                 target_muscle_groups = set()
                 for goal in user.fitness_goals:
                     if goal.value == "strength":
@@ -198,56 +199,112 @@ def ai_recommendations_page():
                     context=context,
                 )
 
-                # Display recommendations
-                st.write("### Personalized Workout Plan")
-
-                if recommendations and "human_readable" in recommendations:
-                    # Display human-readable format
-                    st.write(recommendations["human_readable"])
-                else:
-                    st.error(
-                        "Failed to generate recommendations in the expected format."
-                    )
+                if not recommendations:
+                    st.error("Failed to generate recommendations. Please try again.")
+                    return
 
                 # Save recommendations to database
-                db.save_document(
-                    {
-                        "type": "ai_recommendations",
-                        "user_id": st.session_state.user_id,
-                        "recommendations": recommendations,
-                        "created_at": datetime.now(timezone.utc).isoformat(),
-                    }
-                )
+                doc = {
+                    "type": "recommendations",
+                    "user_id": user.id,
+                    "recommendations": recommendations,
+                    "created_at": datetime.now().isoformat(),
+                }
+                db.save_document(doc)
+
+                # Store recommendations in session state
+                st.session_state.recommendations = recommendations
+
+                # Display the generated routine
+                st.subheader("Generated Workout Routine")
+
+                # Display routine title and description
+                routine_title = recommendations["hevy_api"]["routine"]["title"]
+                routine_notes = recommendations["hevy_api"]["routine"]["notes"]
+                st.markdown(f"### {routine_title}")
+                st.markdown(routine_notes)
+                st.markdown(recommendations["routine_description"])
+
+                # Display each exercise in the routine
+                for exercise in recommendations["hevy_api"]["routine"]["exercises"]:
+                    try:
+                        # Look up the exercise template ID using the title
+                        exercise_doc = vector_store.search_exercises_by_title(
+                            exercise["title"]
+                        )
+                        if not exercise_doc:
+                            st.warning(
+                                f"Could not find exercise template ID for: {exercise['title']}"
+                            )
+                            continue
+
+                        exercise_template_id = exercise_doc[0].metadata.get(
+                            "exercise_template_id"
+                        )
+                        if not exercise_template_id:
+                            st.warning(
+                                f"Exercise template ID not found for: {exercise['title']}"
+                            )
+                            continue
+
+                        st.subheader(f"Exercise: {exercise['title']}")
+                        st.write(f"**Description:** {exercise['exercise_description']}")
+                        st.write(f"**Notes:** {exercise['notes']}")
+                        st.write(
+                            f"**Rest Period:** {exercise['rest_seconds']} seconds between sets"
+                        )
+
+                        # Display sets
+                        st.write("**Sets:**")
+                        for i, set_info in enumerate(exercise["sets"], 1):
+                            set_details = []
+                            if set_info.get("weight_kg") is not None:
+                                set_details.append(f"{set_info['weight_kg']} kg")
+                            if set_info.get("reps") is not None:
+                                set_details.append(f"{set_info['reps']} reps")
+                            if set_info.get("distance_meters") is not None:
+                                set_details.append(
+                                    f"{set_info['distance_meters']} meters"
+                                )
+                            if set_info.get("duration_seconds") is not None:
+                                set_details.append(
+                                    f"{set_info['duration_seconds']} seconds"
+                                )
+
+                            st.write(f"Set {i}: {', '.join(set_details)}")
+
+                        # Update the exercise with the correct template ID
+                        exercise["exercise_template_id"] = exercise_template_id
+
+                    except Exception as e:
+                        st.error(f"Error displaying exercise: {str(e)}")
+                        continue
 
                 # Add buttons for saving to Hevy or regenerating
                 col1, col2 = st.columns(2)
                 with col1:
                     if st.button("Save to Hevy"):
-                        with st.spinner("Saving routine to Hevy..."):
-                            try:
-                                # Initialize Hevy API
-                                hevy_api = HevyAPI(user.hevy_api_key)
+                        try:
+                            # Save the routine to Hevy
+                            hevy_api = HevyAPI()
+                            routine_data = recommendations["hevy_api"]["routine"]
+                            response = hevy_api.create_routine(routine_data)
 
-                                if recommendations and "hevy_api" in recommendations:
-                                    # Save routine to Hevy
-                                    result = hevy_api.create_routine(
-                                        recommendations["hevy_api"]
-                                    )
-
-                                    if result:
-                                        st.success(
-                                            "Routine saved successfully to Hevy!"
-                                        )
-                                    else:
-                                        st.error("Failed to save routine to Hevy.")
-                                else:
-                                    st.error("No Hevy API compatible routine found.")
-                            except Exception as e:
-                                logger.error(f"Error saving routine to Hevy: {str(e)}")
-                                st.error(f"Error saving routine to Hevy: {str(e)}")
+                            if response and "id" in response:
+                                st.success("Routine saved to Hevy successfully!")
+                                # Clear the session state to allow generating a new routine
+                                st.session_state.recommendations = None
+                            else:
+                                st.error(
+                                    "Failed to save routine to Hevy. Please try again."
+                                )
+                        except Exception as e:
+                            st.error(f"Error saving routine to Hevy: {str(e)}")
 
                 with col2:
                     if st.button("Regenerate Recommendations"):
+                        # Clear the session state to allow generating a new routine
+                        st.session_state.recommendations = None
                         st.rerun()
 
                 st.success("Recommendations generated successfully!")

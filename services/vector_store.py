@@ -3,6 +3,7 @@ Vector store service for the AI Personal Trainer application.
 """
 
 import logging
+import uuid
 from typing import Any, Dict, List, Optional
 
 from langchain_community.vectorstores import Chroma
@@ -47,83 +48,48 @@ class ExerciseVectorStore:
             )
         return self._vectorstore
 
-    def add_exercises(self, exercises: List[Dict[str, Any]]) -> None:
+    def add_exercises(self, exercises: List[Dict]) -> None:
         """
         Add exercises to the vector store.
 
         Args:
-            exercises: List of exercise dictionaries
+            exercises (List[Dict]): List of exercise dictionaries
         """
         try:
-            # Process exercises into documents with metadata
+            # Convert exercises to documents
             documents = []
             metadatas = []
+            ids = []
 
             for exercise in exercises:
-                # Check if exercise already has an embedding
-                if exercise.get("embedding"):
-                    # Use the existing embedding
-                    embedding = exercise["embedding"]
-                    logger.info(
-                        f"Using existing embedding for exercise: {exercise.get('name', 'Unknown')}"
-                    )
-                else:
-                    # Generate a new embedding
-                    logger.info(
-                        f"Generating new embedding for exercise: {exercise.get('name', 'Unknown')}"
-                    )
-                    # Create a rich text representation
-                    doc = f"""
-                    Exercise: {exercise['name']}
-                    Description: {exercise.get('description', '')}
-                    Instructions: {exercise.get('instructions', '')}
-                    Primary Muscles: {', '.join([m['name'] for m in exercise['muscle_groups'] if m['is_primary']])}
-                    Secondary Muscles: {', '.join([m['name'] for m in exercise['muscle_groups'] if not m['is_primary']])}
-                    Equipment: {', '.join([e['name'] for e in exercise['equipment']])}
-                    Difficulty: {exercise.get('difficulty', '')}
-                    """
-
-                    # Generate embedding
-                    embedding = self.embeddings.embed_query(doc)
-                    logger.info(
-                        f"Generated embedding for exercise: {exercise.get('name', 'Unknown')}"
-                    )
-
-                    # Update the exercise with the embedding
-                    exercise["embedding"] = embedding
-                    logger.info(
-                        f"Added embedding to exercise: {exercise.get('name', 'Unknown')}"
-                    )
-
-                # Create metadata - convert lists to strings
-                metadata = {
-                    "id": exercise["id"],
-                    "name": exercise["name"],
-                    "muscle_groups": ", ".join(
-                        [m["name"] for m in exercise["muscle_groups"]]
-                    ),
-                    "equipment": ", ".join([e["name"] for e in exercise["equipment"]]),
-                    "difficulty": exercise.get("difficulty", ""),
-                    "is_custom": exercise.get("is_custom", False),
-                }
-
-                # Create document with embedding
-                doc = Document(
-                    page_content=f"Exercise: {exercise['name']}",
-                    metadata=metadata,
-                    embedding=embedding,
+                # Create document content
+                content = (
+                    f"{exercise.get('title', '')} - {exercise.get('description', '')}"
                 )
 
-                documents.append(doc)
+                # Create metadata
+                metadata = {
+                    "title": exercise.get("title", ""),
+                    "description": exercise.get("description", ""),
+                    "muscle_groups": exercise.get("muscle_groups", []),
+                    "equipment": exercise.get("equipment", []),
+                    "difficulty": exercise.get("difficulty", "beginner"),
+                    "exercise_template_id": exercise.get("exercise_template_id", ""),
+                }
+
+                # Generate a unique ID if not provided
+                exercise_id = exercise.get("id", str(uuid.uuid4()))
+
+                documents.append(content)
+                metadatas.append(metadata)
+                ids.append(exercise_id)
 
             # Add to vector store
-            self.vectorstore.add_documents(documents)
-            self.vectorstore.persist()
-            logger.info(f"Added {len(exercises)} exercises to vector store")
+            self.vectorstore.add_texts(texts=documents, metadatas=metadatas, ids=ids)
 
+            logger.info(f"Added {len(exercises)} exercises to vector store")
         except Exception as e:
             logger.error(f"Error adding exercises to vector store: {str(e)}")
-            raise
 
     def search_exercises(
         self, query: str, filter_criteria: Optional[Dict] = None, k: int = 10
@@ -167,6 +133,9 @@ class ExerciseVectorStore:
                     "equipment": equipment,
                     "difficulty": doc.metadata["difficulty"],
                     "is_custom": doc.metadata["is_custom"],
+                    "exercise_template_id": doc.metadata.get(
+                        "exercise_template_id", ""
+                    ),
                     "similarity_score": score,
                 }
                 exercises.append(exercise)
@@ -212,3 +181,139 @@ class ExerciseVectorStore:
         # For string metadata, we need to use a different filter approach
         # We'll use the search_exercises method with a specific query
         return self.search_exercises(f"exercises using {equipment}", k=k)
+
+    def get_exercise_by_id(self, exercise_id: str) -> Optional[Dict]:
+        """
+        Get an exercise by its ID.
+
+        Args:
+            exercise_id (str): The ID of the exercise to retrieve
+
+        Returns:
+            Optional[Dict]: The exercise data if found, None otherwise
+        """
+        try:
+            results = self.vectorstore.get(
+                where={"exercise_template_id": exercise_id},
+                include=["metadatas", "documents"],
+            )
+
+            if not results or not results["metadatas"]:
+                return None
+
+            # Convert to exercise format
+            metadata = results["metadatas"][0]
+            return {
+                "title": metadata.get("title"),
+                "description": metadata.get("description", ""),
+                "muscle_groups": metadata.get("muscle_groups", []),
+                "equipment": metadata.get("equipment", []),
+                "difficulty": metadata.get("difficulty", "beginner"),
+                "exercise_template_id": exercise_id,
+            }
+        except Exception as e:
+            logger.error(f"Error getting exercise by ID: {str(e)}")
+            return None
+
+    def search_exercises_by_title(self, title: str) -> List[Document]:
+        """
+        Search for exercises by exact title match.
+
+        Args:
+            title (str): The exact title to search for
+
+        Returns:
+            List[Document]: List of matching documents, or empty list if no match found
+        """
+        try:
+            if not title:
+                logger.warning("Empty title provided for search")
+                return []
+
+            # Use Chroma's where filter to search by title
+            results = self.vectorstore.get(
+                where={"title": title}, include=["metadatas", "documents"]
+            )
+
+            if not results or not results["metadatas"]:
+                return []
+
+            # Convert results to Document objects
+            documents = []
+            for metadata, doc in zip(results["metadatas"], results["documents"]):
+                # Convert string metadata back to lists
+                muscle_groups = (
+                    metadata["muscle_groups"].split(", ")
+                    if metadata["muscle_groups"]
+                    else []
+                )
+                equipment = (
+                    metadata["equipment"].split(", ") if metadata["equipment"] else []
+                )
+
+                # Create a new metadata dictionary with the correct structure
+                new_metadata = {
+                    "id": metadata.get("id", ""),
+                    "title": metadata.get("title", ""),
+                    "description": metadata.get("description", ""),
+                    "muscle_groups": muscle_groups,
+                    "equipment": equipment,
+                    "difficulty": metadata.get("difficulty", "beginner"),
+                    "is_custom": metadata.get("is_custom", False),
+                    "exercise_template_id": metadata.get("exercise_template_id", ""),
+                }
+
+                documents.append(Document(page_content=doc, metadata=new_metadata))
+
+            return documents
+        except Exception as e:
+            logger.error(f"Error searching exercises by title: {str(e)}")
+            return []
+
+    def search_exercises_by_goal(self, goal: str, limit: int = 5) -> List[Document]:
+        """
+        Search for exercises that match a specific fitness goal.
+
+        Args:
+            goal (str): The fitness goal to search for
+            limit (int): Maximum number of exercises to return
+
+        Returns:
+            List[Document]: List of matching documents
+        """
+        try:
+            # Map goals to relevant muscle groups
+            goal_muscle_groups = {
+                "strength": ["chest", "back", "legs", "shoulders", "arms"],
+                "endurance": ["legs", "core"],
+                "flexibility": ["core", "back", "legs"],
+                "weight_loss": ["chest", "back", "legs", "shoulders", "arms", "core"],
+            }
+
+            # Get muscle groups for the goal
+            muscle_groups = goal_muscle_groups.get(goal.lower(), ["all"])
+
+            # Search for exercises
+            exercises = []
+            for muscle_group in muscle_groups:
+                results = self.get_exercises_by_muscle_group(muscle_group, k=limit)
+                exercises.extend(results)
+
+            # Remove duplicates and limit results
+            seen_names = set()
+            unique_exercises = []
+            for exercise in exercises:
+                name = exercise.get("name")
+                if name and name not in seen_names:
+                    seen_names.add(name)
+                    unique_exercises.append(
+                        Document(
+                            page_content=exercise.get("description", ""),
+                            metadata=exercise,
+                        )
+                    )
+
+            return unique_exercises[:limit]
+        except Exception as e:
+            logger.error(f"Error searching exercises by goal: {str(e)}")
+            return []

@@ -1,9 +1,16 @@
 import json
+import logging
 import os
+import re
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 from openai import OpenAI
+
+from services.vector_store import ExerciseVectorStore
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -17,6 +24,7 @@ class OpenAIService:
             raise ValueError("OPENAI_API_KEY environment variable is not set")
 
         self.client = OpenAI(api_key=self.api_key)
+        self.vector_store = ExerciseVectorStore()
 
     def analyze_workout_form(
         self, exercise_name: str, description: str
@@ -54,7 +62,7 @@ class OpenAIService:
 
         try:
             response = self.client.chat.completions.create(
-                model="gpt-4",
+                model="gpt-4o",
                 messages=[
                     {
                         "role": "system",
@@ -69,15 +77,29 @@ class OpenAIService:
             # Parse the response
             content = response.choices[0].message.content
 
+            # Clean the content by removing control characters
+            content = re.sub(r"[\x00-\x1F\x7F-\x9F]", "", content)
+
             # Extract JSON from the response
             json_start = content.find("{")
             json_end = content.rfind("}") + 1
 
             if json_start >= 0 and json_end > json_start:
                 json_str = content[json_start:json_end]
-                return json.loads(json_str)
+                try:
+                    return json.loads(json_str)
+                except json.JSONDecodeError as e:
+                    print(f"Error parsing JSON response: {e}")
+                    print(f"Response content: {content}")
+                    return {
+                        "proper_form": "Unable to analyze form",
+                        "common_mistakes": [],
+                        "improvement_tips": [],
+                        "safety_considerations": [],
+                    }
             else:
                 print("Could not extract JSON from response")
+                print(f"Response content: {content}")
                 return {
                     "proper_form": "Unable to analyze form",
                     "common_mistakes": [],
@@ -120,52 +142,66 @@ class OpenAIService:
             active_injuries = user_profile.get("active_injuries", [])
             workout_schedule = user_profile.get("workout_schedule", [])
 
-            # Get target muscle groups from fitness goals
-            target_muscle_groups = set()
-            for goal in fitness_goals:
-                if goal == "strength":
-                    target_muscle_groups.update(
-                        ["chest", "back", "legs", "shoulders", "arms"]
-                    )
-                elif goal == "endurance":
-                    target_muscle_groups.update(["legs", "core"])
-                elif goal == "flexibility":
-                    target_muscle_groups.update(["core", "back", "legs"])
-                elif goal == "weight_loss":
-                    target_muscle_groups.update(
-                        ["chest", "back", "legs", "shoulders", "arms", "core"]
-                    )
-
-            # Get relevant exercises using vector store
-            from services.vector_store import ExerciseVectorStore
-
-            vector_store = ExerciseVectorStore()
-
+            # Get relevant exercises based on user's goals and experience level
             relevant_exercises = []
-            for muscle_group in target_muscle_groups:
-                exercises = vector_store.get_exercises_by_muscle_group(
-                    muscle_group=muscle_group, difficulty=experience_level, k=10
+            try:
+                vector_store = ExerciseVectorStore()
+
+                # Get exercises based on fitness goals
+                for goal in fitness_goals:
+                    # Search for exercises relevant to this goal
+                    exercises = vector_store.search_exercises(
+                        f"exercises for {goal} goal", k=5
+                    )
+
+                    # Convert to the format we need
+                    for exercise in exercises:
+                        if exercise.get("name") not in [
+                            e.get("name") for e in relevant_exercises
+                        ]:
+                            relevant_exercises.append(
+                                {
+                                    "title": exercise.get("name"),
+                                    "exercise_template_id": exercise.get(
+                                        "exercise_template_id"
+                                    ),
+                                    "description": exercise.get("description", ""),
+                                    "muscle_groups": exercise.get("muscle_groups", []),
+                                    "equipment": exercise.get("equipment", []),
+                                    "difficulty": exercise.get(
+                                        "difficulty", "beginner"
+                                    ),
+                                }
+                            )
+
+                # If no exercises found, get some general exercises
+                if not relevant_exercises:
+                    exercises = vector_store.search_exercises("general exercises", k=10)
+                    for exercise in exercises:
+                        relevant_exercises.append(
+                            {
+                                "title": exercise.get("name"),
+                                "exercise_template_id": exercise.get(
+                                    "exercise_template_id"
+                                ),
+                                "description": exercise.get("description", ""),
+                                "muscle_groups": exercise.get("muscle_groups", []),
+                                "equipment": exercise.get("equipment", []),
+                                "difficulty": exercise.get("difficulty", "beginner"),
+                            }
+                        )
+
+                logger.info(
+                    f"Found {len(relevant_exercises)} relevant exercises for the routine"
                 )
-                relevant_exercises.extend(exercises)
 
-            # Remove duplicates and limit to most relevant
-            seen_ids = set()
-            unique_exercises = []
-            for exercise in relevant_exercises:
-                if exercise["id"] not in seen_ids:
-                    seen_ids.add(exercise["id"])
-                    unique_exercises.append(exercise)
-
-            # Limit to 50 most relevant exercises
-            relevant_exercises = sorted(
-                unique_exercises,
-                key=lambda x: x.get("similarity_score", 0),
-                reverse=True,
-            )[:50]
+            except Exception as e:
+                logger.error(f"Error getting relevant exercises: {str(e)}")
+                return None
 
             # Create prompt for OpenAI
             prompt = f"""
-            You are an expert personal trainer with deep knowledge of exercise science and workout programming.
+            You are an expert personal trainer with deep knowledge of exercise science and workout programming. Your response must be a valid JSON object with no additional text before or after. The JSON must include 'routine_description' and 'hevy_api' fields.
 
             Create a personalized workout routine based on the following information:
 
@@ -176,7 +212,7 @@ class OpenAIService:
             - Preferred Session Duration: {preferred_duration} minutes
             - Preferred Workout Schedule: {', '.join(workout_schedule) if workout_schedule else 'Not specified'}
 
-            Available Exercises (most relevant to your goals):
+            Available Exercises (you MUST use these exact exercises):
             {json.dumps(relevant_exercises, indent=2)}
 
             Requirements:
@@ -186,7 +222,7 @@ class OpenAIService:
             4. Design a balanced program that:
                - Aligns with the user's specific fitness goals
                - Is appropriate for their experience level
-               - Uses exercises from the available exercises list
+               - Uses ONLY the exercises from the list above
                - Provides specific sets, reps, and intensity recommendations
                - Includes modifications for any injuries or limitations
                - Incorporates progressive overload principles
@@ -196,81 +232,33 @@ class OpenAIService:
 
             Format your response as a JSON object with the following structure:
             {{
-                "human_readable": {{
-                    "title": "string",
-                    "description": "string",
-                    "warm_up": {{
-                        "duration_minutes": number,
+                "routine_description": "A detailed description of the routine's goals, considerations, and overall approach",
+                "hevy_api": {{
+                    "routine": {{
+                        "title": "string",
+                        "folder_id": null,
+                        "notes": "string",
                         "exercises": [
                             {{
-                                "name": "string",
-                                "duration": "string",
-                                "notes": "string"
-                            }}
-                        ]
-                    }},
-                    "strength_training": {{
-                        "duration_minutes": number,
-                        "exercises": [
-                            {{
-                                "name": "string",
-                                "sets": number,
-                                "reps": number,
-                                "rest_time": "string",
-                                "notes": "string"
-                            }}
-                        ]
-                    }},
-                    "cardio": {{
-                        "duration_minutes": number,
-                        "exercises": [
-                            {{
-                                "name": "string",
-                                "duration": "string",
-                                "intensity": "string",
-                                "notes": "string"
-                            }}
-                        ]
-                    }},
-                    "cool_down": {{
-                        "duration_minutes": number,
-                        "exercises": [
-                            {{
-                                "name": "string",
-                                "duration": "string",
-                                "notes": "string"
+                                "title": "string (MUST be one of the exact titles from the exercises list above)",
+                                "exercise_template_id": "string (MUST match the exercise_template_id from the exercises list above)",
+                                "superset_id": null,
+                                "rest_seconds": number,
+                                "notes": "string",
+                                "exercise_description": "A detailed explanation of why this exercise is included in the routine, including its benefits and how it contributes to the user's goals",
+                                "sets": [
+                                    {{
+                                        "type": "normal",
+                                        "weight_kg": number or null,
+                                        "reps": number or null,
+                                        "distance_meters": number or null,
+                                        "duration_seconds": number or null,
+                                        "custom_metric": null
+                                    }}
+                                ]
                             }}
                         ]
                     }}
-                }},
-                "hevy_api": {{
-                    "title": "string",
-                    "description": "string",
-                    "sessions": [
-                        {{
-                            "title": "string",
-                            "duration_minutes": number,
-                            "exercises": [
-                                {{
-                                    "title": "string",
-                                    "notes": "string",
-                                    "sets": [
-                                        {{
-                                            "reps": number,
-                                            "weight_kg": number,
-                                            "rest_seconds": number
-                                        }}
-                                    ]
-                                }}
-                            ]
-                        }}
-                    ],
-                    "rest_days": [
-                        {{
-                            "title": "string",
-                            "description": "string"
-                        }}
-                    ]
                 }}
             }}
 
@@ -281,23 +269,24 @@ class OpenAIService:
             - Include warm-up and cool-down recommendations in the session descriptions
             - Make sure the total volume (sets × reps × weight) is appropriate for the experience level
             - The number of sessions should match the user's preferred workout schedule
-            - For the human_readable format, include detailed notes and explanations for each exercise
-            - For the hevy_api format, ensure the structure matches the Hevy API specifications exactly
-            - The human_readable format should be a detailed, well-formatted text that explains the reasoning behind each exercise and recommendation
-            - Ensure consistency between formats:
-              * Use the same title and description in both formats
-              * For strength exercises, include the same number of sets in both formats
-              * For cardio exercises, convert duration strings to appropriate rest_seconds in the Hevy format
-              * Maintain the same exercise order and structure in both formats
+            - For the hevy_api format:
+              * You MUST use ONLY the exact titles and exercise_template_ids from the exercises list above
+              * The title and exercise_template_id fields are REQUIRED and cannot be null
+              * Set folder_id to null as we'll handle folder assignment separately
+              * Include appropriate rest_seconds between sets
+              * Set type to "normal" for all sets
+              * Set distance_meters, duration_seconds, and custom_metric to null unless specifically needed
+              * Include helpful notes for each exercise
+              * Provide a detailed exercise_description explaining why each exercise is included
             """
 
             # Call OpenAI API
             response = self.client.chat.completions.create(
-                model="gpt-4",
+                model="gpt-4o",
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are an expert personal trainer with deep knowledge of exercise science and workout programming.",
+                        "content": "You are an expert personal trainer with deep knowledge of exercise science and workout programming. Your response must be a valid JSON object with no additional text before or after. The JSON must include 'routine_description' and 'hevy_api' fields.",
                     },
                     {"role": "user", "content": prompt},
                 ],
@@ -307,21 +296,63 @@ class OpenAIService:
 
             # Extract and parse response
             content = response.choices[0].message.content
-            routine = json.loads(content)
+            print(f"OpenAI Response Content: {content}")  # Debug log
 
-            # Print the JSON version for development
-            print("\nGenerated Routine (JSON format):")
-            print(json.dumps(routine["hevy_api"], indent=2))
-            print("\n")
+            # Clean the content by removing control characters and any text before/after JSON
+            content = re.sub(r"[\x00-\x1F\x7F-\x9F]", "", content)
+            json_start = content.find("{")
+            json_end = content.rfind("}") + 1
 
-            # Add name and description from parameters to both formats
-            routine["hevy_api"]["name"] = name
-            routine["hevy_api"]["description"] = description
-            routine["human_readable"]["title"] = name
-            routine["human_readable"]["description"] = description
+            if json_start >= 0 and json_end > json_start:
+                json_str = content[json_start:json_end]
+                try:
+                    routine = json.loads(json_str)
 
-            return routine
+                    # Validate the required fields
+                    if not all(
+                        key in routine for key in ["routine_description", "hevy_api"]
+                    ):
+                        print("Missing required fields in response")
+                        print(f"Response content: {content}")
+                        return None
 
+                    if not all(key in routine["hevy_api"] for key in ["routine"]):
+                        print("Missing required fields in hevy_api")
+                        print(f"Response content: {content}")
+                        return None
+
+                    if not all(
+                        key in routine["hevy_api"]["routine"]
+                        for key in ["title", "notes", "exercises"]
+                    ):
+                        print("Missing required fields in routine")
+                        print(f"Response content: {content}")
+                        return None
+
+                    # Validate each exercise has required fields
+                    for exercise in routine["hevy_api"]["routine"]["exercises"]:
+                        required_fields = [
+                            "title",
+                            "sets",
+                            "exercise_description",
+                        ]
+                        if not all(key in exercise for key in required_fields):
+                            print(f"Missing required fields in exercise: {exercise}")
+                            print(f"Required fields: {required_fields}")
+                            return None
+
+                    print(
+                        f"Parsed Routine: {json.dumps(routine, indent=2)}"
+                    )  # Debug log
+                    return routine
+                except json.JSONDecodeError as e:
+                    print(f"Error parsing JSON response: {e}")
+                    print(f"Response content: {content}")
+                    return None
+            else:
+                print("Could not extract JSON from response")
+                print(f"Response content: {content}")
+                return None
         except Exception as e:
             print(f"Error generating routine: {str(e)}")
             return None
@@ -377,7 +408,7 @@ class OpenAIService:
 
             # Call OpenAI API
             response = self.client.chat.completions.create(
-                model="gpt-4",
+                model="gpt-4o",
                 messages=[
                     {"role": "system", "content": "You are an AI personal trainer."},
                     {"role": "user", "content": prompt},
