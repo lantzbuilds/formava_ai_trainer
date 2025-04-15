@@ -85,4 +85,11 @@ coverage.xml
 *.cover
 *.py,cover
 .hypothesis/
-.pytest_cache/ 
+.pytest_cache/
+
+# Vector store embeddings cache
+data/vectorstore/embeddings_cache/
+data/vectorstore/**/*.bin
+
+# Vector store
+data/vectorstore/embeddings_cache/ 
