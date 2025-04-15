@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Union
 
@@ -6,6 +7,8 @@ import requests
 
 from models.exercise import Exercise, ExerciseList
 from utils.crypto import decrypt_api_key
+
+logger = logging.getLogger(__name__)
 
 
 class HevyAPI:
@@ -491,24 +494,54 @@ class HevyAPI:
             print(f"Error fetching routine folders: {e}")
             return []
 
-    def create_routine_folder(self, folder_data: Dict[str, Any]) -> Optional[str]:
-        """
-        Create a new routine folder.
+    def create_routine_folder(self, title: str) -> Optional[str]:
+        """Create a new routine folder in Hevy.
 
         Args:
-            folder_data: Folder data to create
+            title: Title of the routine folder
 
         Returns:
-            ID of the created folder or None if failed
+            Folder ID if successful, None otherwise
         """
-        url = f"{self.base_url}/routine_folders"
-
         try:
-            response = requests.post(url, headers=self.headers, json=folder_data)
-            response.raise_for_status()
-            return response.json().get("id")
-        except requests.exceptions.RequestException as e:
-            print(f"Error creating routine folder: {e}")
+            folder_data = {"routine_folder": {"title": title}}
+
+            response = requests.post(
+                f"{self.base_url}/routine_folders",
+                headers=self.headers,
+                json=folder_data,
+            )
+
+            if response.status_code != 201:
+                logger.error(
+                    f"Error creating routine folder: {response.status_code} {response.text}"
+                )
+                return None
+
+            folder_response = response.json()
+            logger.debug(f"Folder response: {folder_response}")
+
+            # The response is nested under routine_folder
+            routine_folder = folder_response.get("routine_folder")
+            if not routine_folder:
+                logger.error(f"Missing routine_folder in response: {folder_response}")
+                return None
+
+            # Check for the expected response fields
+            if not all(key in routine_folder for key in ["id", "title", "created_at"]):
+                logger.error(
+                    f"Missing required fields in routine_folder: {routine_folder}"
+                )
+                return None
+
+            folder_id = str(
+                routine_folder["id"]
+            )  # Convert to string to match other IDs
+            logger.info(f"Created routine folder with ID: {folder_id}")
+            return folder_id
+
+        except Exception as e:
+            logger.error(f"Error creating routine folder: {str(e)}")
             return None
 
     def get_routine_folder(self, folder_id: str) -> Optional[Dict[str, Any]]:

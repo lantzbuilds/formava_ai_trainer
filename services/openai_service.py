@@ -10,7 +10,9 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 from config.database import Database
+from services.hevy_api import HevyAPI
 from services.vector_store import ExerciseVectorStore
+from utils.crypto import decrypt_api_key
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -29,6 +31,21 @@ class OpenAIService:
 
         self.client = OpenAI(api_key=self.api_key)
         self.vector_store = ExerciseVectorStore()
+        self._hevy_api = None
+
+    # TODO: Should user be retrieved in __init__ and HevyAPI be initialized there?
+    def _get_hevy_api(self, encrypted_api_key: str) -> HevyAPI:
+        """Get or create a HevyAPI instance with the given encrypted API key.
+
+        Args:
+            encrypted_api_key: The encrypted API key to use
+
+        Returns:
+            HevyAPI instance
+        """
+        if not self._hevy_api:
+            self._hevy_api = HevyAPI(encrypted_api_key)
+        return self._hevy_api
 
     def analyze_workout_form(
         self, exercise_name: str, description: str
@@ -409,43 +426,21 @@ class OpenAIService:
                 logger.error(f"User document not found for user_id: {user_id}")
                 return None
 
-            # Get the encrypted API key from the user's Hevy credentials
-            hevy_credentials = user_doc.get("hevy_credentials", {})
-            hevy_api_key = hevy_credentials.get("api_key")
-
-            if not hevy_api_key:
-                logger.error(
-                    f"No Hevy API key found in credentials for user_id: {user_id}"
-                )
+            # Get the encrypted API key from the user document
+            encrypted_api_key = user_doc.get("hevy_api_key")
+            if not encrypted_api_key:
+                logger.error(f"No Hevy API key found in user document")
                 return None
 
-            logger.debug(f"Retrieved Hevy API key for user {user_id}")
+            # Get HevyAPI instance with the encrypted key
+            hevy_api = self._get_hevy_api(encrypted_api_key)
 
             # Create the routine folder via HevyAPI
-            folder_data = {"routine_folder": {"title": name}}
-
-            # Send POST request to create the folder
-            response = requests.post(
-                "https://api.hevyapp.com/v1/routine_folders",
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {hevy_api_key}",
-                },
-                json=folder_data,
-            )
-
-            if response.status_code != 200:
-                logger.error(
-                    f"Error creating routine folder via HevyAPI: {response.status_code} {response.text}"
-                )
+            folder_id = hevy_api.create_routine_folder(name)
+            if not folder_id:
+                logger.error("Failed to create routine folder")
                 return None
 
-            folder_response = response.json()
-            if "id" not in folder_response:
-                logger.error("No folder ID in HevyAPI response")
-                return None
-
-            folder_id = folder_response["id"]
             logger.info(f"Created routine folder with ID: {folder_id}")
 
             # Extract user profile from context
