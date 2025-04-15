@@ -62,13 +62,33 @@ class ExerciseVectorStore:
             ids = []
 
             for exercise in exercises:
-                # Create document content
+                # Get muscle groups
+                muscle_groups = exercise.get("muscle_groups", [])
+                primary_muscles = [
+                    mg["name"] for mg in muscle_groups if mg.get("is_primary")
+                ]
+                secondary_muscles = [
+                    mg["name"] for mg in muscle_groups if not mg.get("is_primary")
+                ]
+
+                # Get equipment
+                equipment = exercise.get("equipment", [])
+                equipment_names = [eq.get("name", "") for eq in equipment]
+                if not equipment_names:
+                    equipment_names = [
+                        "bodyweight"
+                    ]  # Default to bodyweight if no equipment specified
+
+                # Create document content with muscle groups and equipment
                 content = (
-                    f"{exercise.get('name', '')} - {exercise.get('description', '')}"
+                    f"{exercise.get('name', '')} - "
+                    f"{exercise.get('description', '')} - "
+                    f"Primary muscles: {', '.join(primary_muscles)} - "
+                    f"Secondary muscles: {', '.join(secondary_muscles)} - "
+                    f"Equipment: {', '.join(equipment_names)}"
                 )
 
-                # Convert muscle groups to comma-separated string
-                muscle_groups = exercise.get("muscle_groups", [])
+                # Convert muscle groups to comma-separated string for metadata
                 muscle_groups_str = ", ".join(
                     [
                         f"{mg['name']}({'primary' if mg.get('is_primary') else 'secondary'})"
@@ -77,8 +97,7 @@ class ExerciseVectorStore:
                 )
 
                 # Convert equipment to comma-separated string
-                equipment = exercise.get("equipment", [])
-                equipment_str = ", ".join([eq.get("name", "") for eq in equipment])
+                equipment_str = ", ".join(equipment_names)
 
                 # Get exercise ID and use it as the exercise template ID
                 exercise_id = exercise.get("id", str(uuid.uuid4()))
