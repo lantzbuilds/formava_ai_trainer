@@ -116,6 +116,26 @@ def ai_recommendations_page():
     # Generate AI recommendations
     st.subheader("AI Recommendations")
 
+    # Workout split selection
+    split_type = st.radio(
+        "Workout Split",
+        ["Full Body", "Upper/Lower", "Push/Pull/Legs"],
+        help="Choose your preferred workout split. Full Body is recommended for beginners.",
+        index=0 if user.experience_level == "beginner" else 1,
+    )
+
+    # Time period selection
+    period = st.radio(
+        "Time Period",
+        ["week", "month"],
+        help="Choose whether to generate a week's worth of routines or a month's worth",
+        format_func=lambda x: "Next Week" if x == "week" else "Next Month",
+    )
+
+    # Get date range for the folder name
+    date_range = openai_service._get_date_range(period)
+    default_folder_name = f"{split_type} Split - {date_range}"
+
     # Cardio recommendation options
     cardio_option = st.radio(
         "Cardio Recommendations",
@@ -123,11 +143,15 @@ def ai_recommendations_page():
         help="Choose whether cardio should be included in workout routines or recommended separately",
     )
 
-    # Routine name and description
-    routine_name = st.text_input("Routine Name", "AI Generated Workout Plan")
+    # Routine folder name and description
+    routine_name = st.text_input(
+        "Routine Folder Name",
+        default_folder_name,
+        help="The name of the folder that will contain all your workout routines",
+    )
     routine_description = st.text_area(
         "Routine Description",
-        "A personalized workout plan based on your fitness goals and preferences.",
+        f"A personalized {split_type.lower()} workout plan based on your fitness goals and preferences.",
     )
 
     if st.button("Generate Recommendations"):
@@ -193,10 +217,11 @@ def ai_recommendations_page():
                 }
 
                 # Get recommendations from OpenAI
-                recommendations = openai_service.generate_routine(
-                    name="AI-Generated Workout",
-                    description="Personalized workout routine based on your profile and goals",
+                recommendations = openai_service.generate_routine_folder(
+                    name=routine_name,
+                    description=routine_description,
                     context=context,
+                    period=period,
                 )
 
                 if not recommendations:
@@ -215,91 +240,71 @@ def ai_recommendations_page():
                 # Store recommendations in session state
                 st.session_state.recommendations = recommendations
 
-                # Display the generated routine
-                st.subheader("Generated Workout Routine")
+                # Display the generated routine folder
+                st.subheader("Generated Workout Routine Folder")
+                st.markdown(f"### {recommendations['name']}")
+                st.markdown(f"**Description:** {recommendations['description']}")
+                st.markdown(f"**Split Type:** {recommendations['split_type']}")
+                st.markdown(f"**Date Range:** {recommendations['date_range']}")
 
-                # Display routine title and description
-                routine_title = recommendations["hevy_api"]["routine"]["title"]
-                routine_notes = recommendations["hevy_api"]["routine"]["notes"]
-                st.markdown(f"### {routine_title}")
-                st.markdown(routine_notes)
-                st.markdown(recommendations["routine_description"])
+                # Display each routine in the folder
+                for routine in recommendations["routines"]:
+                    with st.expander(f"{routine['hevy_api']['routine']['title']}"):
+                        st.markdown(routine["routine_description"])
+                        st.markdown(routine["hevy_api"]["routine"]["notes"])
 
-                # Display each exercise in the routine
-                for exercise in recommendations["hevy_api"]["routine"]["exercises"]:
-                    try:
-                        # Look up the exercise template ID using the title
-                        exercise_doc = vector_store.search_exercises_by_title(
-                            exercise["title"]
-                        )
-                        if not exercise_doc:
-                            st.warning(
-                                f"Could not find exercise template ID for: {exercise['title']}"
+                        # Display each exercise in the routine
+                        for exercise in routine["hevy_api"]["routine"]["exercises"]:
+                            st.subheader(f"Exercise: {exercise['title']}")
+                            st.write(
+                                f"**Description:** {exercise['exercise_description']}"
                             )
-                            continue
-
-                        exercise_template_id = exercise_doc[0].metadata.get(
-                            "exercise_template_id"
-                        )
-                        if not exercise_template_id:
-                            st.warning(
-                                f"Exercise template ID not found for: {exercise['title']}"
+                            st.write(f"**Notes:** {exercise['notes']}")
+                            st.write(
+                                f"**Rest Period:** {exercise['rest_seconds']} seconds between sets"
                             )
-                            continue
 
-                        st.subheader(f"Exercise: {exercise['title']}")
-                        st.write(f"**Description:** {exercise['exercise_description']}")
-                        st.write(f"**Notes:** {exercise['notes']}")
-                        st.write(
-                            f"**Rest Period:** {exercise['rest_seconds']} seconds between sets"
-                        )
+                            # Display sets
+                            st.write("**Sets:**")
+                            for i, set_info in enumerate(exercise["sets"], 1):
+                                set_details = []
+                                if set_info.get("weight_kg") is not None:
+                                    set_details.append(f"{set_info['weight_kg']} kg")
+                                if set_info.get("reps") is not None:
+                                    set_details.append(f"{set_info['reps']} reps")
+                                if set_info.get("distance_meters") is not None:
+                                    set_details.append(
+                                        f"{set_info['distance_meters']} meters"
+                                    )
+                                if set_info.get("duration_seconds") is not None:
+                                    set_details.append(
+                                        f"{set_info['duration_seconds']} seconds"
+                                    )
 
-                        # Display sets
-                        st.write("**Sets:**")
-                        for i, set_info in enumerate(exercise["sets"], 1):
-                            set_details = []
-                            if set_info.get("weight_kg") is not None:
-                                set_details.append(f"{set_info['weight_kg']} kg")
-                            if set_info.get("reps") is not None:
-                                set_details.append(f"{set_info['reps']} reps")
-                            if set_info.get("distance_meters") is not None:
-                                set_details.append(
-                                    f"{set_info['distance_meters']} meters"
-                                )
-                            if set_info.get("duration_seconds") is not None:
-                                set_details.append(
-                                    f"{set_info['duration_seconds']} seconds"
-                                )
-
-                            st.write(f"Set {i}: {', '.join(set_details)}")
-
-                        # Update the exercise with the correct template ID
-                        exercise["exercise_template_id"] = exercise_template_id
-
-                    except Exception as e:
-                        st.error(f"Error displaying exercise: {str(e)}")
-                        continue
+                                st.write(f"Set {i}: {', '.join(set_details)}")
 
                 # Add buttons for saving to Hevy or regenerating
                 col1, col2 = st.columns(2)
                 with col1:
                     if st.button("Save to Hevy"):
                         try:
-                            # Save the routine to Hevy
+                            # Save the routine folder to Hevy
                             hevy_api = HevyAPI()
-                            routine_data = recommendations["hevy_api"]["routine"]
-                            response = hevy_api.create_routine(routine_data)
+                            for routine in recommendations["routines"]:
+                                routine_data = routine["hevy_api"]["routine"]
+                                response = hevy_api.create_routine(routine_data)
 
-                            if response and "id" in response:
-                                st.success("Routine saved to Hevy successfully!")
-                                # Clear the session state to allow generating a new routine
-                                st.session_state.recommendations = None
-                            else:
-                                st.error(
-                                    "Failed to save routine to Hevy. Please try again."
-                                )
+                                if not response or "id" not in response:
+                                    st.error(
+                                        f"Failed to save routine {routine_data['title']} to Hevy"
+                                    )
+                                    continue
+
+                            st.success("All routines saved to Hevy successfully!")
+                            # Clear the session state to allow generating a new routine
+                            st.session_state.recommendations = None
                         except Exception as e:
-                            st.error(f"Error saving routine to Hevy: {str(e)}")
+                            st.error(f"Error saving routines to Hevy: {str(e)}")
 
                 with col2:
                     if st.button("Regenerate Recommendations"):
