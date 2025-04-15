@@ -64,21 +64,38 @@ class ExerciseVectorStore:
             for exercise in exercises:
                 # Create document content
                 content = (
-                    f"{exercise.get('title', '')} - {exercise.get('description', '')}"
+                    f"{exercise.get('name', '')} - {exercise.get('description', '')}"
                 )
 
-                # Create metadata
-                metadata = {
-                    "title": exercise.get("title", ""),
-                    "description": exercise.get("description", ""),
-                    "muscle_groups": exercise.get("muscle_groups", []),
-                    "equipment": exercise.get("equipment", []),
-                    "difficulty": exercise.get("difficulty", "beginner"),
-                    "exercise_template_id": exercise.get("exercise_template_id", ""),
-                }
+                # Convert muscle groups to comma-separated string
+                muscle_groups = exercise.get("muscle_groups", [])
+                muscle_groups_str = ", ".join(
+                    [
+                        f"{mg['name']}({'primary' if mg.get('is_primary') else 'secondary'})"
+                        for mg in muscle_groups
+                    ]
+                )
 
-                # Generate a unique ID if not provided
+                # Convert equipment to comma-separated string
+                equipment = exercise.get("equipment", [])
+                equipment_str = ", ".join([eq.get("name", "") for eq in equipment])
+
+                # Get exercise ID and use it as the exercise template ID
                 exercise_id = exercise.get("id", str(uuid.uuid4()))
+
+                # Create metadata with simple types
+                metadata = {
+                    "id": exercise_id,
+                    "name": exercise.get("name", ""),
+                    "title": exercise.get(
+                        "name", ""
+                    ),  # Keep both for backward compatibility
+                    "description": exercise.get("description", ""),
+                    "muscle_groups": muscle_groups_str,
+                    "equipment": equipment_str,
+                    "difficulty": exercise.get("difficulty", "beginner"),
+                    "exercise_template_id": exercise_id,  # Use the exercise ID as the template ID
+                }
 
                 documents.append(content)
                 metadatas.append(metadata)
@@ -114,25 +131,35 @@ class ExerciseVectorStore:
             # Process results
             exercises = []
             for doc, score in results:
-                # Convert string metadata back to lists
-                muscle_groups = (
-                    doc.metadata["muscle_groups"].split(", ")
-                    if doc.metadata["muscle_groups"]
-                    else []
-                )
-                equipment = (
-                    doc.metadata["equipment"].split(", ")
-                    if doc.metadata["equipment"]
-                    else []
-                )
+                # Parse muscle groups string back into list of dictionaries
+                muscle_groups = []
+                if doc.metadata["muscle_groups"]:
+                    for mg_str in doc.metadata["muscle_groups"].split(", "):
+                        if "(" in mg_str:
+                            name, role = mg_str.split("(")
+                            role = role.rstrip(")")
+                            muscle_groups.append(
+                                {"name": name, "is_primary": role == "primary"}
+                            )
+                        else:
+                            muscle_groups.append({"name": mg_str, "is_primary": False})
+
+                # Parse equipment string back into list of dictionaries
+                equipment = []
+                if doc.metadata["equipment"]:
+                    equipment = [
+                        {"name": name}
+                        for name in doc.metadata["equipment"].split(", ")
+                        if name
+                    ]
 
                 exercise = {
-                    "id": doc.metadata["id"],
-                    "name": doc.metadata["name"],
+                    "id": doc.metadata.get("id", ""),
+                    "name": doc.metadata.get("title", ""),
                     "muscle_groups": muscle_groups,
                     "equipment": equipment,
-                    "difficulty": doc.metadata["difficulty"],
-                    "is_custom": doc.metadata["is_custom"],
+                    "difficulty": doc.metadata.get("difficulty", "beginner"),
+                    "is_custom": doc.metadata.get("is_custom", False),
                     "exercise_template_id": doc.metadata.get(
                         "exercise_template_id", ""
                     ),
