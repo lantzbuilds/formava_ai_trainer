@@ -13,6 +13,7 @@ from models.user import UserProfile
 from services.hevy_api import HevyAPI
 from services.openai_service import OpenAIService
 from services.vector_store import ExerciseVectorStore
+from utils.formatters import format_routine_markdown
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -105,9 +106,32 @@ def ai_recommendations_page():
                         muscle_groups[muscle_name] = 0
                     muscle_groups[muscle_name] += 1
 
+        # TODO: likely remove this section
         st.write("**Exercises by primary muscle group:**")
         for muscle, count in muscle_groups.items():
             st.write(f"- {muscle}: {count}")
+
+    # Get user preferences for routine generation
+    st.subheader("Routine Generation Preferences")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        split_type = st.selectbox(
+            "Workout Split Type",
+            ["auto", "full_body", "upper_lower", "ppl"],
+            help="Choose how to split your workouts. 'auto' will determine based on your experience level and days per week.",
+        )
+    with col2:
+        period = st.selectbox(
+            "Time Period",
+            ["week", "month"],
+            help="Generate routines for the upcoming week or month",
+        )
+    with col3:
+        include_cardio = st.checkbox(
+            "Include Cardio",
+            value=True,
+            help="Include cardio exercises in the generated routines",
+        )
 
     # Generate recommendations
     if st.button("Generate Recommendations"):
@@ -132,6 +156,10 @@ def ai_recommendations_page():
                             "days_per_week": user.preferred_workout_days,
                         },
                     },
+                    "generation_preferences": {
+                        "split_type": split_type,
+                        "include_cardio": include_cardio,
+                    },
                 }
 
                 # Generate routine folder
@@ -139,29 +167,47 @@ def ai_recommendations_page():
                     name="AI-Generated Workout Plan",
                     description="Personalized workout plan based on your profile and goals",
                     context=context,
-                    period="week",
+                    period=period,
                 )
 
                 if routine_folder:
-                    # Initialize Hevy API
-                    hevy_api = HevyAPI(user.hevy_api_key)
+                    # Store the generated routine in session state
+                    st.session_state.generated_routine = routine_folder
 
-                    # Save routine folder to Hevy and CouchDB
-                    saved_folder = hevy_api.save_routine_folder(
-                        routine_folder=routine_folder,
-                        user_id=st.session_state.user_id,
-                        db=db,
+                    # Display the generated routine folder
+                    st.success("Routine folder generated successfully!")
+
+                    # Display folder information
+                    st.markdown(f"## {routine_folder['name']}")
+                    st.markdown(f"*{routine_folder['description']}*")
+                    st.markdown(
+                        f"**Split Type:** {routine_folder['split_type'].replace('_', ' ').title()}"
                     )
+                    st.markdown(f"**Days per Week:** {routine_folder['days_per_week']}")
+                    st.markdown(f"**Period:** {routine_folder['period'].title()}")
+                    st.markdown(f"**Date Range:** {routine_folder['date_range']}")
 
-                    if saved_folder:
-                        st.success(
-                            "Successfully generated and saved workout recommendations!"
+                    # Display each routine
+                    for routine in routine_folder["routines"]:
+                        st.markdown(format_routine_markdown(routine))
+
+                    # Save to Hevy button
+                    if st.button("Save to Hevy"):
+                        hevy_api = HevyAPI(user.hevy_api_key)
+                        saved_folder = hevy_api.save_routine_folder(
+                            routine_folder=routine_folder,
+                            user_id=st.session_state.user_id,
+                            db=db,
                         )
-                        st.json(saved_folder)
-                    else:
-                        st.error("Failed to save workout recommendations to Hevy")
+
+                        if saved_folder:
+                            st.success("Routine folder saved to Hevy successfully!")
+                        else:
+                            st.error(
+                                "Failed to save routine folder to Hevy. Please try again."
+                            )
                 else:
-                    st.error("Failed to generate workout recommendations")
+                    st.error("Failed to generate routine folder. Please try again.")
             except Exception as e:
                 logger.error(f"Error generating recommendations: {str(e)}")
                 st.error(f"Error generating recommendations: {str(e)}")

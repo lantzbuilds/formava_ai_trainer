@@ -4,7 +4,7 @@ Service for building and formatting routine folders.
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -14,55 +14,74 @@ class RoutineFolderBuilder:
 
     @staticmethod
     def determine_workout_split(
-        days_per_week: int, experience_level: str
+        days_per_week: int, experience_level: str, preferred_split: str = "auto"
     ) -> tuple[str, List[Dict[str, str]]]:
-        """Determine the appropriate workout split based on days per week and experience level.
+        """Determine the workout split based on user preference and handle additional days.
 
         Args:
             days_per_week: Number of workout days per week
             experience_level: User's experience level (beginner, intermediate, advanced)
+            preferred_split: Preferred split type ("auto", "full_body", "upper_lower", "ppl")
 
         Returns:
             Tuple of (split_type, list of day configurations)
         """
-        if days_per_week == 3:
-            if experience_level == "beginner":
-                split_type = "full_body"
-                routines = [
-                    {"day": "Monday", "focus": "Full Body"},
-                    {"day": "Wednesday", "focus": "Full Body"},
-                    {"day": "Friday", "focus": "Full Body"},
-                ]
-            else:
-                split_type = "upper_lower"
-                routines = [
-                    {"day": "Monday", "focus": "Upper Body"},
-                    {"day": "Wednesday", "focus": "Lower Body"},
-                    {"day": "Friday", "focus": "Upper Body"},
-                ]
-        elif days_per_week == 4:
-            split_type = "upper_lower"
-            routines = [
-                {"day": "Monday", "focus": "Upper Body"},
-                {"day": "Tuesday", "focus": "Lower Body"},
-                {"day": "Thursday", "focus": "Upper Body"},
-                {"day": "Friday", "focus": "Lower Body"},
+        # For beginners, default to full body regardless of days
+        if preferred_split == "auto" and experience_level == "beginner":
+            preferred_split = "full_body"
+        # For others, default to upper/lower for 3-4 days, PPL for 5+ days
+        elif preferred_split == "auto":
+            preferred_split = "upper_lower" if days_per_week <= 4 else "ppl"
+
+        if preferred_split == "full_body":
+            base_routines = [
+                {"day": "Monday", "focus": "Full Body"},
+                {"day": "Wednesday", "focus": "Full Body"},
+                {"day": "Friday", "focus": "Full Body"},
             ]
-        elif days_per_week >= 5:
-            split_type = "ppl"
-            routines = [
+            # Add extra days as additional full body workouts
+            extra_days = days_per_week - 3
+            if extra_days > 0:
+                base_routines.append({"day": "Tuesday", "focus": "Full Body"})
+            if extra_days > 1:
+                base_routines.append({"day": "Thursday", "focus": "Full Body"})
+            if extra_days > 2:
+                base_routines.append({"day": "Saturday", "focus": "Full Body"})
+            return "full_body", base_routines
+
+        elif preferred_split == "upper_lower":
+            base_routines = [
+                {"day": "Monday", "focus": "Upper Body"},
+                {"day": "Wednesday", "focus": "Lower Body"},
+                {"day": "Friday", "focus": "Upper Body"},
+            ]
+            # Add extra days as additional upper/lower workouts
+            extra_days = days_per_week - 3
+            if extra_days > 0:
+                base_routines.append({"day": "Tuesday", "focus": "Lower Body"})
+            if extra_days > 1:
+                base_routines.append({"day": "Thursday", "focus": "Upper Body"})
+            if extra_days > 2:
+                base_routines.append({"day": "Saturday", "focus": "Lower Body"})
+            return "upper_lower", base_routines
+
+        elif preferred_split == "ppl":
+            base_routines = [
                 {"day": "Monday", "focus": "Push (Chest, Shoulders, Triceps)"},
                 {"day": "Tuesday", "focus": "Pull (Back, Biceps)"},
-                {"day": "Wednesday", "focus": "Legs"},
+                {"day": "Wednesday", "focus": "Legs and Abdominals"},
                 {"day": "Thursday", "focus": "Push (Chest, Shoulders, Triceps)"},
                 {"day": "Friday", "focus": "Pull (Back, Biceps)"},
             ]
-            if days_per_week == 6:
-                routines.append({"day": "Saturday", "focus": "Legs"})
-        else:
-            raise ValueError(f"Invalid number of workout days: {days_per_week}")
+            # Add extra days as additional leg and abs workouts
+            extra_days = days_per_week - 5
+            if extra_days > 0:
+                base_routines.append(
+                    {"day": "Saturday", "focus": "Legs and Abdominals"}
+                )
+            return "ppl", base_routines
 
-        return split_type, routines
+        raise ValueError(f"Invalid split type: {preferred_split}")
 
     @staticmethod
     def build_routine_folder(

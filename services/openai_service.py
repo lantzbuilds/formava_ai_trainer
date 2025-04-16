@@ -154,6 +154,7 @@ class OpenAIService:
         focus: str,
         experience_level: str,
         goal: str,
+        context: dict,
     ) -> Dict:
         """Generate a workout routine for a specific day."""
         try:
@@ -236,6 +237,7 @@ class OpenAIService:
             - Preferred Session Duration: {user_doc.get('preferred_workout_duration', 60)} minutes
             - Focus: {focus}
             - Folder ID: {routine_folder_id}
+            - Include Cardio: {context.get('generation_preferences', {}).get('include_cardio', True)}
 
             Available Exercises (you MUST use these exact exercises):
             {json.dumps([{
@@ -256,8 +258,13 @@ class OpenAIService:
                - Includes modifications for any injuries or limitations
                - Incorporates progressive overload principles
                - Includes appropriate rest periods between sets
-            4. Include warm-up and cool-down recommendations
+            4. {f"Include warm-up and cool-down recommendations" if experience_level == "beginner" else ""}
             5. Ensure proper exercise selection and volume to fill the entire session duration
+            6. If Include Cardio is True, add appropriate cardio exercises to the routine:
+               - For strength-focused days (Push/Pull), add 10-15 minutes of moderate cardio
+               - For leg days, add 5-10 minutes of light cardio as warm-up
+               - For full body days, distribute cardio throughout the workout
+               - Adjust cardio duration based on the total workout time
 
             Format your response as a JSON object with the following structure:
             {{
@@ -277,7 +284,7 @@ class OpenAIService:
                                 "exercise_description": "A detailed explanation of why this exercise is included in the routine, including its benefits and how it contributes to the user's goals",
                                 "sets": [
                                     {{
-                                        "type": "normal",
+                                        "type": "warmup|normal|failure|dropset",
                                         "weight_kg": number or null,
                                         "reps": number or null,
                                         "distance_meters": number or null,
@@ -295,14 +302,18 @@ class OpenAIService:
             - The workout should focus on {focus} exercises
             - Include appropriate rest periods between sets (typically 60-90 seconds)
             - Ensure exercises are properly balanced for the {focus} focus
-            - Include warm-up and cool-down recommendations
+            - {f"Include warm-up and cool-down recommendations" if experience_level == "beginner" else ""}
             - Make sure the total volume (sets × reps × weight) is appropriate for {experience_level} level
             - For the hevy_api format:
               * You MUST use ONLY the exact titles and exercise_template_ids from the exercises list above
               * The title and exercise_template_id fields are REQUIRED and cannot be null
               * Set folder_id to "{routine_folder_id}" as this routine belongs to a specific folder
               * Include appropriate rest_seconds between sets
-              * Set type to "normal" for all sets
+              * Set types can be:
+                - "warmup": Lighter sets to prepare for working sets
+                - "normal": Standard working sets
+                - "failure": Sets taken to muscular failure
+                - "dropset": Sets with reduced weight after reaching failure
               * Set distance_meters, duration_seconds, and custom_metric to null unless specifically needed
               * Include helpful notes for each exercise
               * Provide a detailed exercise_description explaining why each exercise is included
@@ -432,7 +443,11 @@ class OpenAIService:
 
             # Determine workout split and routine configurations
             split_type, routines = RoutineFolderBuilder.determine_workout_split(
-                days_per_week, experience_level
+                days_per_week=days_per_week,
+                experience_level=experience_level,
+                preferred_split=context.get("generation_preferences", {}).get(
+                    "split_type", "auto"
+                ),
             )
 
             logger.info(f"Generating routines for split type: {split_type}")
@@ -453,6 +468,7 @@ class OpenAIService:
                     focus=routine["focus"],
                     experience_level=experience_level,
                     goal=fitness_goals[0] if fitness_goals else "General Fitness",
+                    context=context,
                 )
 
                 if day_routine:
