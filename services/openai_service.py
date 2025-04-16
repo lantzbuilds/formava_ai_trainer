@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -32,6 +33,7 @@ class OpenAIService:
         self.client = OpenAI(api_key=self.api_key)
         self._vector_store = None
         self._hevy_api = None
+        self.db = Database()  # Initialize database connection
 
     @property
     def vector_store(self):
@@ -144,112 +146,81 @@ class OpenAIService:
             }
 
     def generate_routine(
-        self, name: str, description: str, context: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Generate a workout routine using OpenAI based on user's fitness goals and preferences.
-
-        Args:
-            name: Name of the routine
-            description: Description of the routine
-            context: Context including user profile and available exercises
-
-        Returns:
-            Dictionary containing the generated routine or None if failed
-        """
-        if not self.api_key:
-            logger.error("OpenAI API key is not configured")
-            return None
-
+        self,
+        user_id: str,
+        routine_folder_id: str,
+        day: str,
+        focus: str,
+        experience_level: str,
+        goal: str,
+    ) -> Dict:
+        """Generate a workout routine for a specific day."""
         try:
-            # Extract user profile information
-            user_profile = context.get("user_profile", {})
-            experience_level = user_profile.get("experience_level", "beginner")
-            fitness_goals = user_profile.get("fitness_goals", [])
-            preferred_duration = user_profile.get("preferred_duration", 60)
-            active_injuries = user_profile.get("active_injuries", [])
-            workout_schedule = user_profile.get("workout_schedule", [])
-            folder_id = context.get("folder_id")
+            logger.info(f"Generating routine for {day} - {focus}")
 
-            # Get relevant exercises based on user's goals and focus
+            # Get user document from database
+            user_doc = self.db.get_document(user_id)
+            if not user_doc:
+                raise ValueError(f"User document not found for user_id: {user_id}")
+
+            # Search for relevant exercises
             relevant_exercises = []
-            try:
-                # Get exercises based on fitness goals and focus
-                focus = description.split("workout")[0].strip().lower()
 
-                # Special handling for full body workouts
-                if focus == "full body":
-                    # Define major muscle groups to target
-                    muscle_groups = ["chest", "back", "legs", "shoulders", "arms"]
-
-                    # Search for exercises targeting each muscle group
-                    for muscle_group in muscle_groups:
-                        query = f"Primary muscles: {muscle_group}"
-                        logger.info(
-                            f"Searching for {muscle_group} exercises with query: {query}"
-                        )
-
-                        exercises = self.vector_store.search_exercises(
-                            query,
-                            k=5,  # Get 5 exercises per muscle group
-                        )
-
-                        # Add unique exercises to relevant_exercises
-                        for exercise in exercises:
-                            if exercise.get("name") not in [
-                                e.get("name") for e in relevant_exercises
-                            ]:
-                                relevant_exercises.append(
-                                    {
-                                        "title": exercise.get("name"),
-                                        "exercise_template_id": exercise.get("id"),
-                                        "description": exercise.get("description", ""),
-                                        "muscle_groups": exercise.get(
-                                            "muscle_groups", []
-                                        ),
-                                        "equipment": exercise.get("equipment", []),
-                                    }
-                                )
-
+            if focus.lower() == "full body":
+                # For full body workouts, search for exercises targeting different muscle groups
+                muscle_groups = ["chest", "back", "legs", "shoulders", "arms"]
+                for muscle_group in muscle_groups:
                     logger.info(
-                        f"Found {len(relevant_exercises)} exercises for full body routine"
+                        f"Searching for {muscle_group} exercises with query: Primary muscles: {muscle_group}"
                     )
-                    logger.info(
-                        f"Exercises by muscle group: {[e['title'] for e in relevant_exercises]}"
-                    )
-                else:
-                    # For other workout types, use the existing search approach
-                    search_query = f"Primary muscles: {focus}"
-                    logger.info(f"Searching for exercises with query: {search_query}")
-
                     exercises = self.vector_store.search_exercises(
-                        search_query,
-                        k=20,
+                        query=f"Primary muscles: {muscle_group}",
+                        k=5,  # Get 5 exercises per muscle group
                     )
-
-                    # Convert to the format we need
+                    # Add exercises that aren't already in the list
                     for exercise in exercises:
-                        if exercise.get("name") not in [
-                            e.get("name") for e in relevant_exercises
-                        ]:
-                            relevant_exercises.append(
-                                {
-                                    "title": exercise.get("name"),
-                                    "exercise_template_id": exercise.get("id"),
-                                    "description": exercise.get("description", ""),
-                                    "muscle_groups": exercise.get("muscle_groups", []),
-                                    "equipment": exercise.get("equipment", []),
-                                }
-                            )
+                        if not any(
+                            e["id"] == exercise["id"] for e in relevant_exercises
+                        ):
+                            relevant_exercises.append(exercise)
 
                 logger.info(
-                    f"Using {len(relevant_exercises)} unique exercises for routine"
+                    f"Found {len(relevant_exercises)} exercises for full body routine"
                 )
-                context["relevant_exercises"] = relevant_exercises
+                logger.info(
+                    f"Exercises by muscle group: {[e['title'] for e in relevant_exercises]}"
+                )
+            else:
+                # For other workout types, use the focus directly
+                search_query = f"{focus} exercises for {experience_level} level"
+                logger.info(f"Searching for exercises with query: {search_query}")
+                relevant_exercises = self.vector_store.search_exercises(
+                    query=search_query,
+                    k=10,  # Get more exercises for variety
+                )
+                logger.info(
+                    f"Found {len(relevant_exercises)} exercises for {focus} routine"
+                )
 
-            except Exception as e:
-                logger.error(f"Error getting relevant exercises: {str(e)}")
-                return None
+            # Ensure we have enough exercises
+            if not relevant_exercises:
+                logger.warning("No exercises found, trying fallback search")
+                relevant_exercises = self.vector_store.search_exercises(
+                    query=f"exercises for {experience_level} level",
+                    k=10,
+                )
+                if not relevant_exercises:
+                    raise ValueError("No exercises found for routine generation")
+
+            # Use only unique exercises
+            unique_exercises = []
+            seen_ids = set()
+            for exercise in relevant_exercises:
+                if exercise["id"] not in seen_ids:
+                    seen_ids.add(exercise["id"])
+                    unique_exercises.append(exercise)
+
+            logger.info(f"Using {len(unique_exercises)} unique exercises for routine")
 
             # Create prompt for OpenAI
             prompt = f"""
@@ -259,17 +230,22 @@ class OpenAIService:
 
             User Profile:
             - Experience Level: {experience_level}
-            - Fitness Goals: {', '.join(fitness_goals)}
-            - Medical Concerns: {', '.join(active_injuries) if active_injuries else 'None'}
-            - Preferred Session Duration: {preferred_duration} minutes
+            - Fitness Goals: {goal}
+            - Medical Concerns: {', '.join([f"{i['description']} ({i['body_part']})" for i in user_doc.get('injuries', []) if i.get('is_active', False)]) if user_doc.get('injuries') else 'None'}
+            - Preferred Session Duration: {user_doc.get('preferred_workout_duration', 60)} minutes
             - Focus: {focus}
-            - Folder ID: {folder_id}
+            - Folder ID: {routine_folder_id}
 
             Available Exercises (you MUST use these exact exercises):
-            {json.dumps(relevant_exercises, indent=2)}
+            {json.dumps([{
+                'title': exercise['title'],
+                'exercise_template_id': exercise['id'],
+                'muscle_groups': exercise['muscle_groups'],
+                'equipment': exercise['equipment']
+            } for exercise in unique_exercises], indent=2)}
 
             Requirements:
-            1. Create a {focus} workout that lasts approximately {preferred_duration} minutes
+            1. Create a {focus} workout that lasts approximately {user_doc.get('preferred_workout_duration', 60)} minutes
             2. Include enough exercises to fill the time appropriately
             3. Design a balanced program that:
                - Focuses on the {focus} muscle groups
@@ -288,7 +264,7 @@ class OpenAIService:
                 "hevy_api": {{
                     "routine": {{
                         "title": "string",
-                        "folder_id": "{folder_id}",
+                        "folder_id": "{routine_folder_id}",
                         "notes": "string",
                         "exercises": [
                             {{
@@ -323,7 +299,7 @@ class OpenAIService:
             - For the hevy_api format:
               * You MUST use ONLY the exact titles and exercise_template_ids from the exercises list above
               * The title and exercise_template_id fields are REQUIRED and cannot be null
-              * Set folder_id to "{folder_id}" as this routine belongs to a specific folder
+              * Set folder_id to "{routine_folder_id}" as this routine belongs to a specific folder
               * Include appropriate rest_seconds between sets
               * Set type to "normal" for all sets
               * Set distance_meters, duration_seconds, and custom_metric to null unless specifically needed
@@ -390,7 +366,7 @@ class OpenAIService:
                             return None
 
                     # Ensure folder_id is set correctly
-                    routine["hevy_api"]["routine"]["folder_id"] = folder_id
+                    routine["hevy_api"]["routine"]["folder_id"] = routine_folder_id
 
                     logger.debug(f"Parsed Routine: {json.dumps(routine, indent=2)}")
                     return routine
@@ -490,7 +466,6 @@ class OpenAIService:
             folder_title = f"{name} - {date_range}"
 
             # Determine appropriate split based on days per week
-            # TODO: splits should be chosen by the user
             if days_per_week == 3:
                 # Full Body or Upper/Lower split
                 if experience_level == "beginner":
@@ -539,15 +514,14 @@ class OpenAIService:
                     f"Generating routine for {routine['day']} - {routine['focus']}"
                 )
 
-                # Add folder_id to the context for the routine generation
-                routine_context = context.copy()
-                routine_context["folder_id"] = folder_id
-
                 # Generate the routine using generate_routine
                 day_routine = self.generate_routine(
-                    name=f"{routine['day']} {routine['focus']}",
-                    description=f"{routine['focus']} workout for {routine['day']}",
-                    context=routine_context,
+                    user_id=user_id,
+                    routine_folder_id=folder_id,
+                    day=routine["day"],
+                    focus=routine["focus"],
+                    experience_level=experience_level,
+                    goal=fitness_goals[0] if fitness_goals else "General Fitness",
                 )
 
                 if day_routine:
