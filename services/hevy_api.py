@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import requests
 
+from config.database import Database
 from models.exercise import Exercise, ExerciseList
 from utils.crypto import decrypt_api_key
 
@@ -691,3 +692,73 @@ class HevyAPI:
                 )
 
         return synced_count
+
+    def save_routine_folder(
+        self, routine_folder: Dict[str, Any], user_id: str, db: Database
+    ) -> Optional[Dict[str, Any]]:
+        """Save an entire routine folder to Hevy and persist to CouchDB.
+
+        Args:
+            routine_folder: The routine folder data containing routines to save
+            user_id: The user ID to associate with the routines
+            db: Database instance for CouchDB persistence
+
+        Returns:
+            Dictionary containing the saved routine folder data with Hevy IDs, or None if failed
+        """
+        try:
+            # First create the routine folder in Hevy
+            folder_id = self.create_routine_folder(routine_folder["name"])
+            if not folder_id:
+                logger.error("Failed to create routine folder in Hevy")
+                return None
+
+            logger.info(f"Created routine folder in Hevy with ID: {folder_id}")
+
+            # Save each routine in the folder
+            saved_routines = []
+            for routine in routine_folder["routines"]:
+                # Update the routine's folder_id
+                routine["hevy_api"]["routine"]["folder_id"] = folder_id
+
+                # Create the routine in Hevy
+                routine_id = self.create_routine(routine["hevy_api"])
+                if routine_id:
+                    logger.info(f"Created routine in Hevy with ID: {routine_id}")
+                    # Update the routine data with the Hevy ID
+                    routine["hevy_api"]["routine"]["id"] = routine_id
+                    saved_routines.append(routine)
+                else:
+                    logger.error(
+                        f"Failed to create routine in Hevy: {routine['hevy_api']['routine']['title']}"
+                    )
+
+            if not saved_routines:
+                logger.error("Failed to create any routines in Hevy")
+                return None
+
+            # Update the routine folder data with Hevy IDs
+            saved_folder = {
+                **routine_folder,
+                "folder_id": folder_id,
+                "routines": saved_routines,
+                "user_id": user_id,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "type": "routine_folder",  # Document type for CouchDB
+            }
+
+            # Save to CouchDB
+            try:
+                db.save_document(saved_folder, user_id=user_id)
+                logger.info(
+                    f"Saved routine folder to CouchDB with ID: {saved_folder['_id']}"
+                )
+            except Exception as e:
+                logger.error(f"Error saving routine folder to CouchDB: {str(e)}")
+                # Continue even if CouchDB save fails, as the routines are already in Hevy
+
+            return saved_folder
+
+        except Exception as e:
+            logger.error(f"Error saving routine folder to Hevy: {str(e)}")
+            return None

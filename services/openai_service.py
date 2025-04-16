@@ -12,6 +12,7 @@ from openai import OpenAI
 
 from config.database import Database
 from services.hevy_api import HevyAPI
+from services.routine_folder_builder import RoutineFolderBuilder
 from services.vector_store import ExerciseVectorStore
 from utils.crypto import decrypt_api_key
 
@@ -422,87 +423,17 @@ class OpenAIService:
             Dictionary containing the routine folder structure or None if generation fails
         """
         try:
-            # Get user's Hevy API key from context
-            user_id = context.get("user_id")
-            if not user_id:
-                logger.error("No user_id found in context")
-                return None
-
-            # Get user document from database
-            db = Database()
-            user_doc = db.get_document(user_id)
-            if not user_doc:
-                logger.error(f"User document not found for user_id: {user_id}")
-                return None
-
-            # Get the encrypted API key from the user document
-            encrypted_api_key = user_doc.get("hevy_api_key")
-            if not encrypted_api_key:
-                logger.error(f"No Hevy API key found in user document")
-                return None
-
-            # Get HevyAPI instance with the encrypted key
-            hevy_api = self._get_hevy_api(encrypted_api_key)
-
-            # Create the routine folder via HevyAPI
-            folder_id = hevy_api.create_routine_folder(name)
-            if not folder_id:
-                logger.error("Failed to create routine folder")
-                return None
-
-            logger.info(f"Created routine folder with ID: {folder_id}")
-
             # Extract user profile from context
             user_profile = context.get("user_profile", {})
             experience_level = user_profile.get("experience_level", "beginner")
             fitness_goals = user_profile.get("fitness_goals", [])
-            preferred_duration = user_profile.get("preferred_workout_duration", 60)
-            injuries = user_profile.get("injuries", [])
             workout_schedule = user_profile.get("workout_schedule", {})
             days_per_week = workout_schedule.get("days_per_week", 3)
 
-            # Get date range and create folder title
-            date_range = self._get_date_range(period)
-            folder_title = f"{name} - {date_range}"
-
-            # Determine appropriate split based on days per week
-            if days_per_week == 3:
-                # Full Body or Upper/Lower split
-                if experience_level == "beginner":
-                    split_type = "full_body"
-                    routines = [
-                        {"day": "Monday", "focus": "Full Body"},
-                        {"day": "Wednesday", "focus": "Full Body"},
-                        {"day": "Friday", "focus": "Full Body"},
-                    ]
-                else:
-                    split_type = "upper_lower"
-                    routines = [
-                        {"day": "Monday", "focus": "Upper Body"},
-                        {"day": "Wednesday", "focus": "Lower Body"},
-                        {"day": "Friday", "focus": "Upper Body"},
-                    ]
-            elif days_per_week == 4:
-                # Upper/Lower split
-                split_type = "upper_lower"
-                routines = [
-                    {"day": "Monday", "focus": "Upper Body"},
-                    {"day": "Tuesday", "focus": "Lower Body"},
-                    {"day": "Thursday", "focus": "Upper Body"},
-                    {"day": "Friday", "focus": "Lower Body"},
-                ]
-            elif days_per_week >= 5:
-                # Push/Pull/Legs split
-                split_type = "ppl"
-                routines = [
-                    {"day": "Monday", "focus": "Push (Chest, Shoulders, Triceps)"},
-                    {"day": "Tuesday", "focus": "Pull (Back, Biceps)"},
-                    {"day": "Wednesday", "focus": "Legs"},
-                    {"day": "Thursday", "focus": "Push (Chest, Shoulders, Triceps)"},
-                    {"day": "Friday", "focus": "Pull (Back, Biceps)"},
-                ]
-                if days_per_week == 6:
-                    routines.append({"day": "Saturday", "focus": "Legs"})
+            # Determine workout split and routine configurations
+            split_type, routines = RoutineFolderBuilder.determine_workout_split(
+                days_per_week, experience_level
+            )
 
             logger.info(f"Generating routines for split type: {split_type}")
             logger.info(f"Routines to generate: {routines}")
@@ -516,8 +447,8 @@ class OpenAIService:
 
                 # Generate the routine using generate_routine
                 day_routine = self.generate_routine(
-                    user_id=user_id,
-                    routine_folder_id=folder_id,
+                    user_id=context["user_id"],
+                    routine_folder_id=None,  # Will be set when routines are saved to Hevy
                     day=routine["day"],
                     focus=routine["focus"],
                     experience_level=experience_level,
@@ -529,8 +460,6 @@ class OpenAIService:
                     logger.debug(
                         f"Generated routine: {json.dumps(day_routine, indent=2)}"
                     )
-                    # Update the routine's folder_id
-                    day_routine["hevy_api"]["routine"]["folder_id"] = folder_id
                     generated_routines.append(day_routine)
                 else:
                     logger.error(f"Failed to generate routine for {routine['day']}")
@@ -539,17 +468,17 @@ class OpenAIService:
                 logger.error("Failed to generate any routines")
                 return None
 
-            # Create the routine folder structure
-            routine_folder = {
-                "name": folder_title,
-                "description": description,
-                "split_type": split_type,
-                "days_per_week": days_per_week,
-                "period": period,
-                "date_range": date_range,
-                "folder_id": folder_id,
-                "routines": generated_routines,
-            }
+            # Build the routine folder structure
+            date_range = RoutineFolderBuilder.get_date_range(period)
+            routine_folder = RoutineFolderBuilder.build_routine_folder(
+                name=name,
+                description=description,
+                split_type=split_type,
+                routines=routines,
+                period=period,
+                date_range=date_range,
+            )
+            routine_folder["routines"] = generated_routines
 
             logger.info(
                 f"Successfully generated routine folder with {len(generated_routines)} routines"

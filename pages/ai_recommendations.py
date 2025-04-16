@@ -143,8 +143,23 @@ def ai_recommendations_page():
                 )
 
                 if routine_folder:
-                    st.success("Successfully generated workout recommendations!")
-                    st.json(routine_folder)
+                    # Initialize Hevy API
+                    hevy_api = HevyAPI(user.hevy_api_key)
+
+                    # Save routine folder to Hevy and CouchDB
+                    saved_folder = hevy_api.save_routine_folder(
+                        routine_folder=routine_folder,
+                        user_id=st.session_state.user_id,
+                        db=db,
+                    )
+
+                    if saved_folder:
+                        st.success(
+                            "Successfully generated and saved workout recommendations!"
+                        )
+                        st.json(saved_folder)
+                    else:
+                        st.error("Failed to save workout recommendations to Hevy")
                 else:
                     st.error("Failed to generate workout recommendations")
             except Exception as e:
