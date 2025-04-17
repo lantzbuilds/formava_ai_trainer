@@ -12,6 +12,7 @@ from config.database import Database
 from models.user import UserProfile
 from services.hevy_api import HevyAPI
 from services.openai_service import OpenAIService
+from services.routine_folder_builder import RoutineFolderBuilder
 from services.vector_store import ExerciseVectorStore
 from utils.formatters import format_routine_markdown
 
@@ -117,7 +118,7 @@ def ai_recommendations_page():
     with col1:
         split_type = st.selectbox(
             "Workout Split Type",
-            ["auto", "full_body", "upper_lower", "ppl"],
+            ["auto", "full_body", "upper_lower", "push_pull"],
             help="Choose how to split your workouts. 'auto' will determine based on your experience level and days per week.",
         )
     with col2:
@@ -135,6 +136,7 @@ def ai_recommendations_page():
 
     # Generate recommendations
     if st.button("Generate Recommendations"):
+        # TODO: if possible, change spinner messages on intervals, or add a progress bar
         with st.spinner("Generating workout recommendations..."):
             try:
                 # Create context for routine generation
@@ -162,9 +164,12 @@ def ai_recommendations_page():
                     },
                 }
 
-                # Generate routine folder
+                # Get date range for the folder name
+                date_range = RoutineFolderBuilder.get_date_range(period)
+
+                # Generate the routine folder
                 routine_folder = openai_service.generate_routine_folder(
-                    name="AI-Generated Workout Plan",
+                    name=f"{split_type.replace('_', ' ').title()} Workout Plan - {date_range}",
                     description="Personalized workout plan based on your profile and goals",
                     context=context,
                     period=period,
@@ -189,23 +194,8 @@ def ai_recommendations_page():
 
                     # Display each routine
                     for routine in routine_folder["routines"]:
+                        st.markdown("---")  # Add a separator between routines
                         st.markdown(format_routine_markdown(routine))
-
-                    # Save to Hevy button
-                    if st.button("Save to Hevy"):
-                        hevy_api = HevyAPI(user.hevy_api_key)
-                        saved_folder = hevy_api.save_routine_folder(
-                            routine_folder=routine_folder,
-                            user_id=st.session_state.user_id,
-                            db=db,
-                        )
-
-                        if saved_folder:
-                            st.success("Routine folder saved to Hevy successfully!")
-                        else:
-                            st.error(
-                                "Failed to save routine folder to Hevy. Please try again."
-                            )
                 else:
                     st.error("Failed to generate routine folder. Please try again.")
             except Exception as e:
@@ -215,3 +205,22 @@ def ai_recommendations_page():
         st.info(
             "Click the button above to generate personalized workout recommendations based on your profile and workout history."
         )
+    # TODO: redirect to Routines page after saving to Hevy? or display saved routine here?
+    # Save to Hevy button (outside the generation block)
+    if "generated_routine" in st.session_state:
+        if st.button("Save to Hevy"):
+            try:
+                hevy_api = HevyAPI(user.hevy_api_key)
+                saved_folder = hevy_api.save_routine_folder(
+                    routine_folder=st.session_state.generated_routine,
+                    user_id=st.session_state.user_id,
+                    db=db,
+                )
+
+                if saved_folder:
+                    st.success("Routine folder saved to Hevy successfully!")
+                else:
+                    st.error("Failed to save routine folder to Hevy. Please try again.")
+            except Exception as e:
+                logger.error(f"Error saving to Hevy: {str(e)}")
+                st.error(f"Error saving to Hevy: {str(e)}")

@@ -188,47 +188,96 @@ class HevyAPI:
             return []
 
     def create_routine(self, routine_data: Dict[str, Any]) -> Optional[str]:
-        """
-        Create a new routine.
+        """Create a new routine in Hevy.
 
         Args:
-            routine_data: Routine data to create
+            routine_data: The routine data to create
 
         Returns:
-            ID of the created routine or None if failed
+            Routine ID if successful, None otherwise
         """
-        url = f"{self.base_url}/routines"
-
         try:
-            # Check if the routine has the new format with weeks
-            if "weeks" in routine_data and routine_data["weeks"]:
-                # Convert the new format to Hevy API format
-                hevy_routine = self._convert_routine_to_hevy_format(routine_data)
-            else:
-                # Check if the routine is already in the correct format
-                if "routine" in routine_data:
-                    hevy_routine = routine_data
-                else:
-                    # Convert to the correct format
-                    hevy_routine = {
-                        "routine": {
-                            "title": routine_data.get("name", "Unnamed Routine"),
-                            "folder_id": None,
-                            "notes": routine_data.get("description", ""),
-                            "exercises": routine_data.get("exercises", []),
-                        }
+            # Ensure the routine data is in the correct format
+            if "routine" not in routine_data:
+                routine_data = {
+                    "routine": {
+                        "title": routine_data.get("name", "Unnamed Routine"),
+                        "folder_id": routine_data.get("folder_id"),
+                        "notes": routine_data.get("description", ""),
+                        "exercises": routine_data.get("exercises", []),
                     }
+                }
 
-            # Log the request for debugging
-            print(
-                f"Sending routine creation request: {json.dumps(hevy_routine, indent=2)}"
-            )
+            logger.info(f"Creating routine: {routine_data['routine']['title']}")
+            logger.debug(f"Request data: {json.dumps(routine_data, indent=2)}")
 
-            response = requests.post(url, headers=self.headers, json=hevy_routine)
-            response.raise_for_status()
-            return response.json().get("id")
-        except requests.exceptions.RequestException as e:
-            print(f"Error creating routine: {e}")
+            # Validate all exercise template IDs before proceeding
+            for exercise in routine_data["routine"]["exercises"]:
+                exercise_id = exercise.get("exercise_template_id")
+                if not exercise_id:
+                    logger.error(
+                        f"Missing exercise template ID in exercise: {exercise}"
+                    )
+                    return None
+
+                # Verify the exercise template exists in Hevy
+                exercise_details = self.get_exercise_details(exercise_id)
+                if not exercise_details:
+                    logger.error(f"Invalid exercise template ID: {exercise_id}")
+                    return None
+                logger.debug(f"Validated exercise template ID: {exercise_id}")
+
+            # Format exercises for Hevy API
+            formatted_exercises = []
+            for exercise in routine_data["routine"]["exercises"]:
+                formatted_exercise = {
+                    "exercise_template_id": exercise["exercise_template_id"],
+                    "superset_id": None,
+                    "rest_seconds": exercise.get("rest_seconds", 90),
+                    "notes": exercise.get("notes", ""),
+                    "sets": exercise.get("sets", []),
+                }
+                formatted_exercises.append(formatted_exercise)
+
+            # Update the routine data with formatted exercises
+            routine_data["routine"]["exercises"] = formatted_exercises
+
+            url = f"{self.base_url}/routines"
+            logger.info(f"Sending POST request to: {url}")
+            logger.debug(f"Headers: {json.dumps(self.headers, indent=2)}")
+            logger.debug(f"Final request data: {json.dumps(routine_data, indent=2)}")
+
+            response = requests.post(url, headers=self.headers, json=routine_data)
+            logger.debug(f"Response status code: {response.status_code}")
+            logger.debug(f"Response text: {response.text}")
+
+            if response.status_code != 201:
+                logger.error(
+                    f"Error creating routine: {response.status_code} {response.text}"
+                )
+                return None
+
+            routine_response = response.json()
+            logger.debug(f"Routine response: {routine_response}")
+
+            # The response has the routine data nested under a 'routine' key
+            if "routine" in routine_response and isinstance(
+                routine_response["routine"], list
+            ):
+                routine_data = routine_response["routine"][0]
+                routine_id = routine_data.get("id")
+                if routine_id:
+                    logger.info(f"Created routine with ID: {routine_id}")
+                    return routine_id
+                else:
+                    logger.error(f"Missing routine ID in response: {routine_response}")
+                    return None
+            else:
+                logger.error(f"Unexpected response format: {routine_response}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Error creating routine: {str(e)}")
             return None
 
     def _convert_routine_to_hevy_format(
@@ -506,12 +555,21 @@ class HevyAPI:
         """
         try:
             folder_data = {"routine_folder": {"title": title}}
+            logger.info(f"Creating routine folder with title: {title}")
+            logger.debug(f"Request data: {json.dumps(folder_data, indent=2)}")
+
+            url = f"{self.base_url}/routine_folders"
+            logger.info(f"Sending POST request to: {url}")
+            logger.debug(f"Headers: {json.dumps(self.headers, indent=2)}")
 
             response = requests.post(
-                f"{self.base_url}/routine_folders",
+                url,
                 headers=self.headers,
                 json=folder_data,
             )
+
+            logger.debug(f"Response status code: {response.status_code}")
+            logger.debug(f"Response text: {response.text}")
 
             if response.status_code != 201:
                 logger.error(
@@ -707,6 +765,8 @@ class HevyAPI:
             Dictionary containing the saved routine folder data with Hevy IDs, or None if failed
         """
         try:
+            logger.info(f"Starting to save routine folder: {routine_folder['name']}")
+
             # First create the routine folder in Hevy
             folder_id = self.create_routine_folder(routine_folder["name"])
             if not folder_id:
@@ -718,11 +778,25 @@ class HevyAPI:
             # Save each routine in the folder
             saved_routines = []
             for routine in routine_folder["routines"]:
-                # Update the routine's folder_id
-                routine["hevy_api"]["routine"]["folder_id"] = folder_id
+                # Create the routine data in the correct format
+                routine_data = {
+                    "routine": {
+                        "title": routine["hevy_api"]["routine"]["title"],
+                        "folder_id": folder_id,
+                        "notes": routine["hevy_api"]["routine"].get("notes", ""),
+                        "exercises": routine["hevy_api"]["routine"].get(
+                            "exercises", []
+                        ),
+                    }
+                }
+
+                logger.info(
+                    f"Creating routine: {routine['hevy_api']['routine']['title']}"
+                )
+                logger.debug(f"Routine data: {json.dumps(routine_data, indent=2)}")
 
                 # Create the routine in Hevy
-                routine_id = self.create_routine(routine["hevy_api"])
+                routine_id = self.create_routine(routine_data)
                 if routine_id:
                     logger.info(f"Created routine in Hevy with ID: {routine_id}")
                     # Update the routine data with the Hevy ID
@@ -737,19 +811,36 @@ class HevyAPI:
                 logger.error("Failed to create any routines in Hevy")
                 return None
 
-            # Update the routine folder data with Hevy IDs
+            # Create the document to save to CouchDB
             saved_folder = {
-                **routine_folder,
-                "folder_id": folder_id,
-                "routines": saved_routines,
+                "_id": f"routine_folder_{folder_id}",  # Unique ID for the document
+                "type": "routine_folder",
                 "user_id": user_id,
                 "created_at": datetime.now(timezone.utc).isoformat(),
-                "type": "routine_folder",  # Document type for CouchDB
+                "folder_id": folder_id,
+                "name": routine_folder["name"],
+                "description": routine_folder.get("description", ""),
+                "split_type": routine_folder.get("split_type", ""),
+                "days_per_week": routine_folder.get("days_per_week", 0),
+                "period": routine_folder.get("period", ""),
+                "date_range": routine_folder.get("date_range", ""),
+                "routines": saved_routines,
+                "request_data": routine_folder,  # Save the original request data
+                "hevy_response": {  # Save the Hevy response data
+                    "folder_id": folder_id,
+                    "routines": [
+                        {
+                            "id": routine["hevy_api"]["routine"]["id"],
+                            "title": routine["hevy_api"]["routine"]["title"],
+                        }
+                        for routine in saved_routines
+                    ],
+                },
             }
 
             # Save to CouchDB
             try:
-                db.save_document(saved_folder, user_id=user_id)
+                db.save_document(saved_folder)  # Remove user_id parameter
                 logger.info(
                     f"Saved routine folder to CouchDB with ID: {saved_folder['_id']}"
                 )

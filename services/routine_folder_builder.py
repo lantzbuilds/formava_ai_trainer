@@ -21,7 +21,7 @@ class RoutineFolderBuilder:
         Args:
             days_per_week: Number of workout days per week
             experience_level: User's experience level (beginner, intermediate, advanced)
-            preferred_split: Preferred split type ("auto", "full_body", "upper_lower", "ppl")
+            preferred_split: Preferred split type ("auto", "full_body", "upper_lower", "push_pull")
 
         Returns:
             Tuple of (split_type, list of day configurations)
@@ -29,9 +29,9 @@ class RoutineFolderBuilder:
         # For beginners, default to full body regardless of days
         if preferred_split == "auto" and experience_level == "beginner":
             preferred_split = "full_body"
-        # For others, default to upper/lower for 3-4 days, PPL for 5+ days
+        # For others, default to upper/lower for 3-4 days, push/pull for 5+ days
         elif preferred_split == "auto":
-            preferred_split = "upper_lower" if days_per_week <= 4 else "ppl"
+            preferred_split = "upper_lower" if days_per_week <= 4 else "push_pull"
 
         if preferred_split == "full_body":
             base_routines = [
@@ -65,7 +65,7 @@ class RoutineFolderBuilder:
                 base_routines.append({"day": "Saturday", "focus": "Lower Body"})
             return "upper_lower", base_routines
 
-        elif preferred_split == "ppl":
+        elif preferred_split == "push_pull":
             base_routines = [
                 {"day": "Monday", "focus": "Push (Chest, Shoulders, Triceps)"},
                 {"day": "Tuesday", "focus": "Pull (Back, Biceps)"},
@@ -79,7 +79,7 @@ class RoutineFolderBuilder:
                 base_routines.append(
                     {"day": "Saturday", "focus": "Legs and Abdominals"}
                 )
-            return "ppl", base_routines
+            return "push_pull", base_routines
 
         raise ValueError(f"Invalid split type: {preferred_split}")
 
@@ -112,7 +112,7 @@ class RoutineFolderBuilder:
             "days_per_week": len(routines),
             "period": period,
             "date_range": date_range,
-            "routines": [],  # Will be populated with generated routines
+            "routines": routines,  # Include the actual routines
         }
 
     @staticmethod
