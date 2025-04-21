@@ -106,7 +106,7 @@ class RoutineFolderBuilder:
             Dictionary containing the routine folder structure
         """
         return {
-            "name": f"{name} - {date_range}",
+            "name": name,  # Use the provided name directly
             "description": description,
             "split_type": split_type,
             "days_per_week": len(routines),

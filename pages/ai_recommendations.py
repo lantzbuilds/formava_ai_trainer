@@ -134,6 +134,19 @@ def ai_recommendations_page():
             help="Include cardio exercises in the generated routines",
         )
 
+    # Get date range for the folder name
+    date_range = RoutineFolderBuilder.get_date_range(period)
+    suggested_title = (
+        f"{split_type.replace('_', ' ').title()} Workout Plan - {date_range}"
+    )
+
+    # Add editable title field
+    routine_title = st.text_input(
+        "Routine Folder Title",
+        value=suggested_title,
+        help="Edit the title for your workout routine folder",
+    )
+
     # Generate recommendations
     if st.button("Generate Recommendations"):
         # TODO: if possible, change spinner messages on intervals, or add a progress bar
@@ -164,12 +177,9 @@ def ai_recommendations_page():
                     },
                 }
 
-                # Get date range for the folder name
-                date_range = RoutineFolderBuilder.get_date_range(period)
-
                 # Generate the routine folder
                 routine_folder = openai_service.generate_routine_folder(
-                    name=f"{split_type.replace('_', ' ').title()} Workout Plan - {date_range}",
+                    name=routine_title,
                     description="Personalized workout plan based on your profile and goals",
                     context=context,
                     period=period,
