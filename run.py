@@ -35,15 +35,15 @@ def run_streamlit(args: List[str] = None):
 
 
 def check_couchdb_running():
-    """Check if CouchDB container is running."""
+    """Check if CouchDB container is running using docker-compose."""
     try:
         result = subprocess.run(
-            ["docker", "ps", "--filter", "name=couchdb", "--format", "{{.Names}}"],
+            ["docker-compose", "ps", "couchdb"],
             capture_output=True,
             text=True,
-            timeout=5,  # Add a 5-second timeout
+            timeout=5,
         )
-        return "couchdb" in result.stdout
+        return "up" in result.stdout
     except subprocess.TimeoutExpired:
         print("Timeout checking CouchDB container status")
         return False
@@ -52,21 +52,13 @@ def check_couchdb_running():
 
 
 def check_couchdb_exists():
-    """Check if CouchDB container exists (running or stopped)."""
+    """Check if CouchDB container exists (running or stopped) using docker-compose."""
     try:
         result = subprocess.run(
-            [
-                "docker",
-                "ps",
-                "-a",
-                "--filter",
-                "name=couchdb",
-                "--format",
-                "{{.Names}}",
-            ],
+            ["docker-compose", "ps", "-a", "couchdb"],
             capture_output=True,
             text=True,
-            timeout=5,  # Add a 5-second timeout
+            timeout=5,
         )
         return "couchdb" in result.stdout
     except subprocess.TimeoutExpired:
@@ -77,52 +69,20 @@ def check_couchdb_exists():
 
 
 def start_couchdb():
-    """Start CouchDB container if not already running."""
+    """Start CouchDB container using docker-compose if not already running."""
     if not check_couchdb_running():
-        if check_couchdb_exists():
-            print("Starting existing CouchDB container...")
-            try:
-                subprocess.run(
-                    ["docker", "start", "couchdb"],
-                    check=True,
-                )
-                # Wait for CouchDB to be ready
-                print("Waiting for CouchDB to be ready...")
-                time.sleep(5)  # Give CouchDB time to start
-            except subprocess.CalledProcessError as e:
-                print(f"Error starting existing CouchDB container: {e}")
-                raise
-        else:
-            print("Creating new CouchDB container...")
-            couchdb_user = os.getenv("COUCHDB_USER", "admin")
-            couchdb_password = os.getenv("COUCHDB_PASSWORD", "password")
-
-            try:
-                subprocess.run(
-                    [
-                        "docker",
-                        "run",
-                        "-d",
-                        "--name",
-                        "couchdb",
-                        "-p",
-                        "5984:5984",
-                        "-e",
-                        f"COUCHDB_USER={couchdb_user}",
-                        "-e",
-                        f"COUCHDB_PASSWORD={couchdb_password}",
-                        "couchdb:latest",
-                    ],
-                    check=True,
-                )
-
-                # Wait for CouchDB to be ready
-                print("Waiting for CouchDB to be ready...")
-                time.sleep(5)  # Give CouchDB time to start
-
-            except subprocess.CalledProcessError as e:
-                print(f"Error creating CouchDB container: {e}")
-                raise
+        print("Starting CouchDB container using docker-compose...")
+        try:
+            subprocess.run(
+                ["docker-compose", "up", "-d", "couchdb"],
+                check=True,
+            )
+            # Wait for CouchDB to be ready
+            print("Waiting for CouchDB to be ready...")
+            time.sleep(5)  # Give CouchDB time to start
+        except subprocess.CalledProcessError as e:
+            print(f"Error starting CouchDB container: {e}")
+            raise
 
 
 def check_docker_running():
