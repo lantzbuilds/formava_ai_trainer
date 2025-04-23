@@ -146,6 +146,7 @@ class OpenAIService:
                 "safety_considerations": [],
             }
 
+    # TODO: add workout history to prompt
     def _create_routine_prompt(
         self,
         day: str,
@@ -313,7 +314,10 @@ class OpenAIService:
 
             logger.info(f"Using {len(unique_exercises)} unique exercises for routine")
 
+            # TODO: query last 30 days of workouts from vector store
+
             # Create the prompt for OpenAI
+            # TODO: add workouts to prompt
             prompt = self._create_routine_prompt(
                 day=day,
                 focus=focus,
@@ -322,6 +326,7 @@ class OpenAIService:
                 include_cardio=include_cardio,
             )
 
+            # TODO: check model, role in completion
             # Call OpenAI API
             response = self.client.chat.completions.create(
                 model="gpt-4-turbo-preview",

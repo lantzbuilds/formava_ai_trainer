@@ -25,6 +25,7 @@ def run_streamlit(args: List[str] = None):
         "--server.runOnSave=true",
         "--server.fileWatcherType=watchdog",
         "--logger.level=debug",
+        "--client.showSidebarNavigation=false",
     ]
 
     # Add any additional arguments

@@ -26,6 +26,7 @@ openai_service = OpenAIService()
 vector_store = ExerciseVectorStore()
 
 
+# TODO: refactor render function into "component" fns
 def ai_recommendations_page():
     """Display the AI recommendations page."""
     st.title("AI Recommendations")
@@ -46,7 +47,10 @@ def ai_recommendations_page():
         st.session_state.user_id, start_date, end_date
     )
 
+    # TODO: get embeddings for workouts; add to vector store
+
     # Get available exercises
+    # TODO: check when (custom) exercises populate db; only on sync_hevy?
     exercises = db.get_exercises(user_id=st.session_state.user_id, include_custom=True)
 
     # Display user's profile summary
