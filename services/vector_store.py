@@ -484,3 +484,154 @@ class ExerciseVectorStore:
         except Exception as e:
             logger.error(f"Error searching exercises by goal: {str(e)}")
             return []
+
+    def add_workout_history(self, workouts: List[Dict]) -> None:
+        """
+        Add workout history to the vector store.
+
+        Args:
+            workouts (List[Dict]): List of workout dictionaries
+        """
+        try:
+            # Convert workouts to documents
+            documents = []
+            metadatas = []
+            ids = []
+
+            for workout in workouts:
+                # Skip if workout is missing required fields
+                if not workout.get("title") or not workout.get("exercises"):
+                    logger.warning(
+                        f"Skipping workout due to missing required fields: {workout}"
+                    )
+                    continue
+
+                # Get workout ID
+                workout_id = workout.get("id", str(uuid.uuid4()))
+
+                # Extract exercise information
+                exercises_info = []
+                for exercise in workout.get("exercises", []):
+                    exercise_title = exercise.get("title", "Unknown Exercise")
+                    exercise_notes = exercise.get("notes")
+                    sets_info = []
+                    for set_data in exercise.get("sets", []):
+                        weight = set_data.get("weight_kg", 0)
+                        reps = set_data.get("reps", 0)
+                        rpe = set_data.get("rpe")
+                        duration = set_data.get("duration_seconds")
+                        distance = set_data.get("distance_meters")
+                        custom_metric = set_data.get("custom_metric")
+
+                        # Build set info string based on exercise type
+                        if duration is not None:
+                            set_info = f"{duration}s"
+                        elif distance is not None:
+                            set_info = f"{distance}m"
+                        elif custom_metric is not None:
+                            # For exercises like stair machine that use custom_metric
+                            set_info = f"{custom_metric} {'floors' if 'stair' in exercise_title.lower() else 'steps'}"
+                        else:
+                            set_info = f"{weight}kg x {reps} reps"
+
+                        # Add RPE if present
+                        if rpe is not None:
+                            set_info += f" @ RPE {rpe}"
+
+                        sets_info.append(set_info)
+
+                    # Combine exercise info
+                    exercise_info = f"{exercise_title}: {' | '.join(sets_info)}"
+                    if exercise_notes:
+                        exercise_info += f" [Notes: {exercise_notes}]"
+                    exercises_info.append(exercise_info)
+
+                # Create document content
+                content = (
+                    f"Workout: {workout.get('title')} - "
+                    f"Date: {workout.get('start_time', 'Unknown')} - "
+                    f"Duration: {workout.get('duration_minutes', 'Unknown')} minutes - "
+                    f"Exercises: {' | '.join(exercises_info)}"
+                )
+
+                # Create metadata
+                metadata = {
+                    "id": str(workout_id),
+                    "title": str(workout.get("title")),
+                    "start_time": str(workout.get("start_time")),
+                    "end_time": str(workout.get("end_time")),
+                    "duration_minutes": str(workout.get("duration_minutes")),
+                    "exercise_count": len(workout.get("exercises", [])),
+                    "type": "workout_history",
+                    "user_id": str(workout.get("user_id")),
+                }
+
+                documents.append(content)
+                metadatas.append(metadata)
+                ids.append(str(workout_id))
+
+            # Add to vector store
+            self.vectorstore.add_texts(texts=documents, metadatas=metadatas, ids=ids)
+            # Persist the vector store to disk
+            self.vectorstore.persist()
+
+            logger.info(f"Added {len(workouts)} workouts to vector store")
+            if documents and metadatas:
+                logger.info("Sample of added workout:")
+                logger.info(f"Content: {documents[0]}")
+                logger.info(f"Metadata: {metadatas[0]}")
+        except Exception as e:
+            logger.error(f"Error adding workouts to vector store: {str(e)}")
+            raise
+
+    def search_workout_history(
+        self,
+        query: str,
+        user_id: str,
+        k: int = 5,
+    ) -> List[Dict]:
+        """
+        Search for similar workouts in the user's history.
+
+        Args:
+            query (str): Search query
+            user_id (str): User ID to filter workouts
+            k (int): Number of results to return
+
+        Returns:
+            List[Dict]: List of workout dictionaries
+        """
+        try:
+            # Perform similarity search with user filter
+            results = self.vectorstore.similarity_search_with_score(
+                query=query,
+                k=k,
+                filter={"user_id": user_id, "type": "workout_history"},
+            )
+
+            logger.info(f"Found {len(results)} similar workouts")
+
+            # Process results
+            workouts = []
+            for doc, score in results:
+                try:
+                    workout = {
+                        "id": doc.metadata.get("id"),
+                        "title": doc.metadata.get("title"),
+                        "start_time": doc.metadata.get("start_time"),
+                        "end_time": doc.metadata.get("end_time"),
+                        "duration_minutes": doc.metadata.get("duration_minutes"),
+                        "exercise_count": doc.metadata.get("exercise_count"),
+                        "similarity_score": score,
+                    }
+                    workouts.append(workout)
+
+                    logger.info(f"Found workout: {workout['title']} (score: {score})")
+                except Exception as e:
+                    logger.error(f"Error processing result: {str(e)}")
+                    logger.error(f"Document metadata: {doc.metadata}")
+
+            return workouts
+        except Exception as e:
+            logger.error(f"Error searching workout history: {str(e)}")
+            return []

@@ -57,94 +57,94 @@ class OpenAIService:
             self._hevy_api = HevyAPI(encrypted_api_key)
         return self._hevy_api
 
-    def analyze_workout_form(
-        self, exercise_name: str, description: str
-    ) -> Dict[str, Any]:
-        """
-        Analyze workout form based on exercise name and description.
+    # def analyze_workout_form(
+    #     self, exercise_name: str, description: str
+    # ) -> Dict[str, Any]:
+    #     """
+    #     Analyze workout form based on exercise name and description.
 
-        Args:
-            exercise_name: Name of the exercise
-            description: Description of the exercise form
+    #     Args:
+    #         exercise_name: Name of the exercise
+    #         description: Description of the exercise form
 
-        Returns:
-            Analysis results
-        """
-        prompt = f"""
-        I need an analysis of the following exercise form:
-        
-        Exercise: {exercise_name}
-        Description: {description}
-        
-        Please provide feedback on:
-        1. Proper form and technique
-        2. Common mistakes to avoid
-        3. Tips for improvement
-        4. Safety considerations
-        
-        Format the response as a JSON object with the following structure:
-        {{
-            "proper_form": "Description of proper form",
-            "common_mistakes": ["Mistake 1", "Mistake 2", ...],
-            "improvement_tips": ["Tip 1", "Tip 2", ...],
-            "safety_considerations": ["Consideration 1", "Consideration 2", ...]
-        }}
-        """
+    #     Returns:
+    #         Analysis results
+    #     """
+    #     prompt = f"""
+    #     I need an analysis of the following exercise form:
 
-        try:
-            response = self.client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an expert personal trainer with deep knowledge of exercise form and technique.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.7,
-                max_tokens=1000,
-            )
+    #     Exercise: {exercise_name}
+    #     Description: {description}
 
-            # Parse the response
-            content = response.choices[0].message.content
+    #     Please provide feedback on:
+    #     1. Proper form and technique
+    #     2. Common mistakes to avoid
+    #     3. Tips for improvement
+    #     4. Safety considerations
 
-            # Clean the content by removing control characters
-            content = re.sub(r"[\x00-\x1F\x7F-\x9F]", "", content)
+    #     Format the response as a JSON object with the following structure:
+    #     {{
+    #         "proper_form": "Description of proper form",
+    #         "common_mistakes": ["Mistake 1", "Mistake 2", ...],
+    #         "improvement_tips": ["Tip 1", "Tip 2", ...],
+    #         "safety_considerations": ["Consideration 1", "Consideration 2", ...]
+    #     }}
+    #     """
 
-            # Extract JSON from the response
-            json_start = content.find("{")
-            json_end = content.rfind("}") + 1
+    #     try:
+    #         response = self.client.chat.completions.create(
+    #             model="gpt-4o",
+    #             messages=[
+    #                 {
+    #                     "role": "system",
+    #                     "content": "You are an expert personal trainer with deep knowledge of exercise form and technique.",
+    #                 },
+    #                 {"role": "user", "content": prompt},
+    #             ],
+    #             temperature=0.7,
+    #             max_tokens=1000,
+    #         )
 
-            if json_start >= 0 and json_end > json_start:
-                json_str = content[json_start:json_end]
-                try:
-                    return json.loads(json_str)
-                except json.JSONDecodeError as e:
-                    print(f"Error parsing JSON response: {e}")
-                    print(f"Response content: {content}")
-                    return {
-                        "proper_form": "Unable to analyze form",
-                        "common_mistakes": [],
-                        "improvement_tips": [],
-                        "safety_considerations": [],
-                    }
-            else:
-                print("Could not extract JSON from response")
-                print(f"Response content: {content}")
-                return {
-                    "proper_form": "Unable to analyze form",
-                    "common_mistakes": [],
-                    "improvement_tips": [],
-                    "safety_considerations": [],
-                }
-        except Exception as e:
-            print(f"Error analyzing form: {e}")
-            return {
-                "proper_form": "Unable to analyze form",
-                "common_mistakes": [],
-                "improvement_tips": [],
-                "safety_considerations": [],
-            }
+    #         # Parse the response
+    #         content = response.choices[0].message.content
+
+    #         # Clean the content by removing control characters
+    #         content = re.sub(r"[\x00-\x1F\x7F-\x9F]", "", content)
+
+    #         # Extract JSON from the response
+    #         json_start = content.find("{")
+    #         json_end = content.rfind("}") + 1
+
+    #         if json_start >= 0 and json_end > json_start:
+    #             json_str = content[json_start:json_end]
+    #             try:
+    #                 return json.loads(json_str)
+    #             except json.JSONDecodeError as e:
+    #                 print(f"Error parsing JSON response: {e}")
+    #                 print(f"Response content: {content}")
+    #                 return {
+    #                     "proper_form": "Unable to analyze form",
+    #                     "common_mistakes": [],
+    #                     "improvement_tips": [],
+    #                     "safety_considerations": [],
+    #                 }
+    #         else:
+    #             print("Could not extract JSON from response")
+    #             print(f"Response content: {content}")
+    #             return {
+    #                 "proper_form": "Unable to analyze form",
+    #                 "common_mistakes": [],
+    #                 "improvement_tips": [],
+    #                 "safety_considerations": [],
+    #             }
+    #     except Exception as e:
+    #         print(f"Error analyzing form: {e}")
+    #         return {
+    #             "proper_form": "Unable to analyze form",
+    #             "common_mistakes": [],
+    #             "improvement_tips": [],
+    #             "safety_considerations": [],
+    #         }
 
     # TODO: add workout history to prompt
     def _create_routine_prompt(
@@ -154,6 +154,7 @@ class OpenAIService:
         exercises: List[Dict[str, Any]],
         context: dict,
         include_cardio: bool,
+        similar_workouts: List[Dict] = None,
     ) -> str:
         """Create the prompt for OpenAI to generate a workout routine.
 
@@ -163,6 +164,7 @@ class OpenAIService:
             exercises: List of available exercises
             context: User context and preferences
             include_cardio: Whether to include cardio in the routine
+            similar_workouts: List of similar workouts from user's history
 
         Returns:
             Formatted prompt string
@@ -186,61 +188,50 @@ class OpenAIService:
             else "None"
         )
 
-        return f"""
-        You are an expert personal trainer with deep knowledge of exercise science and workout programming. Your response must be a valid JSON object with no additional text before or after. The JSON must include 'routine_description' and 'hevy_api' fields.
+        # Format similar workouts for the prompt
+        workout_history_text = ""
+        if similar_workouts:
+            workout_history_text = "\n\nSimilar workouts from user's history:\n"
+            for workout in similar_workouts:
+                workout_history_text += f"- {workout['title']} ({workout['start_time']}): {workout['exercise_count']} exercises\n"
 
-        Create a personalized workout routine based on the following information:
-
+        # Create the prompt
+        prompt = f"""
+        Create a {focus} workout routine for {day} that is appropriate for a {experience_level} level user.
+        
         User Profile:
         - Experience Level: {experience_level}
         - Fitness Goals: {', '.join(fitness_goals)}
-        - Medical Concerns: {injury_text}
-        - Preferred Session Duration: {preferred_duration} minutes
-        - Focus: {focus}
-        - Include Cardio: {include_cardio}
-
-        Available Exercises (you MUST use these exact exercises):
-        {json.dumps([{
-            'title': exercise['title'],
-            'exercise_template_id': exercise['id'],
-            'muscle_groups': exercise['muscle_groups'],
-            'equipment': exercise['equipment']
-        } for exercise in exercises], indent=2)}
-
-        Requirements:
-        1. Create a {focus} workout that lasts approximately {preferred_duration} minutes
-        2. Include enough exercises to fill the time appropriately
-        3. Design a balanced program that:
-           - Focuses on the {focus} muscle groups
-           - Is appropriate for {experience_level} level
-           - Uses ONLY the exercises from the list above
-           - Provides specific sets, reps, and intensity recommendations
-           - Includes modifications for any injuries or limitations
-           - Incorporates progressive overload principles
-           - Includes appropriate rest periods between sets
-        4. {f"Include warm-up and cool-down recommendations" if experience_level == "beginner" else ""}
-        5. Ensure proper exercise selection and volume to fill the entire session duration
-        6. If Include Cardio is True, add appropriate cardio exercises to the routine:
-           - For strength-focused days (Push/Pull), add 10-15 minutes of moderate cardio
-           - For leg days, add 5-10 minutes of light cardio as warm-up
-           - For full body days, distribute cardio throughout the workout
-           - Adjust cardio duration based on the total workout time
-
-        Format your response as a JSON object with the following structure:
+        - Active Injuries: {injury_text}
+        - Preferred Workout Duration: {preferred_duration} minutes
+        {workout_history_text}
+        
+        Available Exercises:
+        {json.dumps(exercises, indent=2)}
+        
+        Please create a workout routine that:
+        1. Targets the specified muscle groups effectively
+        2. Is appropriate for the user's experience level
+        3. Avoids exercises that could aggravate injuries
+        4. Includes appropriate rest periods
+        5. Stays within the preferred workout duration
+        6. Builds upon the user's previous workout patterns
+        {f"7. Includes {preferred_duration // 10} minutes of cardio" if include_cardio else ""}
+        
+        Return the response in JSON format that matches the Hevy API requirements:
         {{
-            "routine_description": "A detailed description of the routine's goals, considerations, and overall approach",
+            "routine_description": "A detailed description of the routine's goals and approach",
             "hevy_api": {{
                 "routine": {{
                     "title": "string",
+                    "folder_id": null,
                     "notes": "string",
                     "exercises": [
                         {{
-                            "title": "string (MUST be one of the exact titles from the exercises list above)",
                             "exercise_template_id": "string (MUST match the exercise_template_id from the exercises list above)",
-                            "superset_id": null,
+                            "superset_id": number or null,
                             "rest_seconds": number,
                             "notes": "string",
-                            "exercise_description": "A detailed explanation of why this exercise is included in the routine, including its benefits and how it contributes to the user's goals",
                             "sets": [
                                 {{
                                     "type": "warmup|normal|failure|dropset",
@@ -248,7 +239,7 @@ class OpenAIService:
                                     "reps": number or null,
                                     "distance_meters": number or null,
                                     "duration_seconds": number or null,
-                                    "custom_metric": null
+                                    "custom_metric": number or null
                                 }}
                             ]
                         }}
@@ -258,24 +249,37 @@ class OpenAIService:
         }}
 
         Important Notes:
-        - The workout should focus on {focus} exercises
-        - Include appropriate rest periods between sets (typically 60-90 seconds)
-        - Ensure exercises are properly balanced for the {focus} focus
-        - {f"Include warm-up and cool-down recommendations" if experience_level == "beginner" else ""}
-        - Make sure the total volume (sets × reps × weight) is appropriate for {experience_level} level
-        - For the hevy_api format:
-          * You MUST use ONLY the exact titles and exercise_template_ids from the exercises list above
-          * The title and exercise_template_id fields are REQUIRED and cannot be null
-          * Include appropriate rest_seconds between sets
-          * Set types can be:
-            - "warmup": Lighter sets to prepare for working sets
-            - "normal": Standard working sets
-            - "failure": Sets taken to muscular failure
-            - "dropset": Sets with reduced weight after reaching failure
-          * Set distance_meters, duration_seconds, and custom_metric to null unless specifically needed
-          * Include helpful notes for each exercise
-          * Provide a detailed exercise_description explaining why each exercise is included
+        - You MUST use ONLY the exact exercise_template_ids from the exercises list above
+        - The exercise_template_id field is REQUIRED and cannot be null
+        - Set types can be: "warmup", "normal", "failure", or "dropset"
+        - Include appropriate notes for both the routine and individual exercises
+        - For timed exercises, use duration_seconds
+        - For cardio/distance exercises, use distance_meters
+        - For stair machine exercises, use custom_metric for floors/steps
+        - For standard exercises, use weight_kg and reps
+        - Include rest_seconds between sets (typically 60-90 seconds for strength training)
+        - While we can see RPE in the user's history, we cannot include it in the generated routine
+        
+        Exercise Requirements:
+        - Weight training exercises MUST have at least 3 sets
+        - Weight training exercises MUST specify weight_kg for each set
+        - Warm-up sets should be included for compound movements
+        - For strength-focused exercises, use 3-5 sets of 3-6 reps
+        - For hypertrophy-focused exercises, use 3-4 sets of 8-12 reps
+        - For endurance-focused exercises, use 2-3 sets of 12-15+ reps
+        - Cardio exercises should specify either duration_seconds or distance_meters
+        - Bodyweight exercises should still specify weight_kg as 0
+
+        Superset Guidelines:
+        - Use supersets to pair complementary exercises (e.g., push/pull, agonist/antagonist)
+        - Assign the same superset_id number to exercises that should be performed together
+        - Limit supersets to 2-3 exercises to maintain intensity and form
+        - Consider the user's experience level when creating supersets
+        - Include appropriate rest periods between supersets
+        - Add notes to explain the superset pairing and execution
         """
+
+        return prompt
 
     def generate_routine(
         self, day: str, focus: str, context: dict, include_cardio: bool = True
@@ -294,6 +298,7 @@ class OpenAIService:
         try:
             # Search for relevant exercises
             query = f"{focus} exercises for {context['user_profile']['experience_level']} level"
+            # TODO: can add equipment as filter_criteria to search_exercises
             exercises = self.vector_store.search_exercises(query)
 
             if not exercises:
@@ -314,16 +319,29 @@ class OpenAIService:
 
             logger.info(f"Using {len(unique_exercises)} unique exercises for routine")
 
-            # TODO: query last 30 days of workouts from vector store
+            # Get similar workouts from user's history
+            user_id = context.get("user_id")
+            if user_id:
+                similar_workouts = self.vector_store.search_workout_history(
+                    query=f"{focus} workout routine",
+                    user_id=user_id,
+                    k=3,  # Get top 3 similar workouts
+                )
+                logger.info(
+                    f"Found {len(similar_workouts)} similar workouts in history"
+                )
+            else:
+                similar_workouts = []
+                logger.warning("No user ID provided, skipping workout history search")
 
             # Create the prompt for OpenAI
-            # TODO: add workouts to prompt
             prompt = self._create_routine_prompt(
                 day=day,
                 focus=focus,
                 exercises=unique_exercises,
                 context=context,
                 include_cardio=include_cardio,
+                similar_workouts=similar_workouts,
             )
 
             # TODO: check model, role in completion
@@ -420,7 +438,9 @@ class OpenAIService:
                     day=routine["day"],
                     focus=routine["focus"],
                     context=context,
-                    include_cardio=routine["focus"] == "full body",
+                    include_cardio=context.get("generation_preferences", {}).get(
+                        "include_cardio", False
+                    ),
                 )
                 if routine_data:
                     generated_routines.append(routine_data)

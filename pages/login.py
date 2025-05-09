@@ -2,13 +2,85 @@
 Login page for the AI Personal Trainer application.
 """
 
+import logging
+from datetime import datetime, timedelta, timezone
+
 import streamlit as st
 
 from config.database import Database
 from models.user import UserProfile
+from services.hevy_api import HevyAPI
+from services.vector_store import ExerciseVectorStore
+from utils.crypto import decrypt_api_key
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Initialize database connection
 db = Database()
+
+
+def initialize_user_data(user: UserProfile):
+    """
+    Initialize user data after login, including fetching and vectorizing workout history
+    and ensuring all exercises are vectorized.
+
+    Args:
+        user: UserProfile instance
+    """
+    try:
+        # Initialize vector store
+        vector_store = ExerciseVectorStore()
+
+        # Get all exercises (standard and custom)
+        exercises = db.get_exercises(user_id=user.id, include_custom=True)
+        if exercises:
+            # Check if we need to add any exercises
+            exercises_to_add = []
+            for exercise in exercises:
+                # Check if exercise exists in vector store
+                existing = vector_store.search_exercises_by_title(
+                    exercise.get("title", "")
+                )
+                if not existing:
+                    exercises_to_add.append(exercise)
+
+            if exercises_to_add:
+                logger.info(f"Found {len(exercises_to_add)} new exercises to vectorize")
+                # Add only new exercises to vector store
+                vector_store.add_exercises(exercises_to_add)
+                logger.info("Successfully vectorized new exercises")
+            else:
+                logger.info("All exercises are already vectorized")
+
+        # If user has Hevy API key, fetch and vectorize workout history
+        if user.hevy_api_key:
+            try:
+                # Decrypt API key
+                api_key = decrypt_api_key(user.hevy_api_key)
+                hevy_api = HevyAPI(api_key)
+
+                # Get workouts from the last 30 days
+                end_date = datetime.now(timezone.utc)
+                start_date = end_date - timedelta(days=30)
+
+                # Get workouts from database
+                workouts = db.get_user_workout_history(user.id, start_date, end_date)
+
+                if workouts:
+                    logger.info(f"Found {len(workouts)} workouts to vectorize")
+                    # Add workouts to vector store
+                    vector_store.add_workout_history(workouts)
+                    logger.info("Successfully vectorized workout history")
+                else:
+                    logger.info("No recent workouts found to vectorize")
+
+            except Exception as e:
+                logger.error(f"Error initializing Hevy data: {str(e)}")
+
+    except Exception as e:
+        logger.error(f"Error initializing user data: {str(e)}")
 
 
 def login_page():
@@ -31,6 +103,10 @@ def login_page():
                     # Store the document ID, not the user ID
                     st.session_state.user_id = user_doc["_id"]
                     st.session_state.username = username
+
+                    # Initialize user data
+                    initialize_user_data(user)
+
                     st.rerun()
                 else:
                     st.error("Invalid username or password")
