@@ -56,14 +56,14 @@ def initialize_user_data(user: UserProfile):
 
         # If user has Hevy API key, fetch and vectorize workout history
         if user.hevy_api_key:
+            # Initialize date variables outside the try block
+            end_date = datetime.now(timezone.utc)
+            start_date = end_date - timedelta(days=30)
+
             try:
                 # Decrypt API key
                 api_key = decrypt_api_key(user.hevy_api_key)
-                hevy_api = HevyAPI(api_key)
-
-                # Get workouts from the last 30 days
-                end_date = datetime.now(timezone.utc)
-                start_date = end_date - timedelta(days=30)
+                hevy_api = HevyAPI(api_key, is_encrypted=False)
 
                 # Get workouts from database
                 workouts = db.get_user_workout_history(user.id, start_date, end_date)
@@ -77,10 +77,15 @@ def initialize_user_data(user: UserProfile):
                     logger.info("No recent workouts found to vectorize")
 
             except Exception as e:
-                logger.error(f"Error initializing Hevy data: {str(e)}")
+                logger.error(f"Error initializing Hevy data: {str(e)}", exc_info=True)
+                # Log additional context
+                logger.error(f"User ID: {user.id}")
+                logger.error(f"Has Hevy API key: {bool(user.hevy_api_key)}")
+                logger.error(f"Start date: {start_date}")
+                logger.error(f"End date: {end_date}")
 
     except Exception as e:
-        logger.error(f"Error initializing user data: {str(e)}")
+        logger.error(f"Error initializing user data: {str(e)}", exc_info=True)
 
 
 def login_page():

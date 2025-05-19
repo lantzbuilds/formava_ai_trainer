@@ -15,9 +15,18 @@ logger = logging.getLogger(__name__)
 class HevyAPI:
     """Service for interacting with the Hevy API."""
 
-    def __init__(self, encrypted_api_key: str):
-        """Initialize the Hevy API client with an encrypted API key."""
-        self.api_key = decrypt_api_key(encrypted_api_key)
+    def __init__(self, api_key: str, is_encrypted: bool = True):
+        """Initialize the Hevy API client with an API key.
+
+        Args:
+            api_key: The API key (either encrypted or decrypted)
+            is_encrypted: Whether the API key is encrypted (default: True)
+        """
+        if is_encrypted:
+            self.api_key = decrypt_api_key(api_key)
+        else:
+            self.api_key = api_key
+
         if not self.api_key:
             raise ValueError("Invalid or missing Hevy API key")
 

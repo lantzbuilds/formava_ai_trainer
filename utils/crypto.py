@@ -1,9 +1,13 @@
 import base64
+import logging
 import os
 from pathlib import Path
 
 from cryptography.fernet import Fernet
 from dotenv import load_dotenv
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -16,21 +20,26 @@ def get_or_create_key():
     """Get the encryption key from environment or generate a new one."""
     # First try to get from environment
     key = os.getenv("ENCRYPTION_KEY")
+    logger.info(f"Got key from environment: {bool(key)}")
+    if key:
+        logger.debug(f"Key from environment: {key[:10]}...")
 
     # If not in environment, try to read from file
     if not key and KEY_FILE.exists():
         key = KEY_FILE.read_text().strip()
+        logger.info("Got key from file")
+        logger.debug(f"Key from file: {key[:10]}...")
 
     # If still no key, generate a new one
     if not key:
         key = Fernet.generate_key().decode()
         # Save to file
         KEY_FILE.write_text(key)
-        print(
+        logger.warning(
             "WARNING: No ENCRYPTION_KEY found. Generated a new one and saved to .encryption_key"
         )
-        print("For production use, please add this to your .env file:")
-        print(f"ENCRYPTION_KEY={key}")
+        logger.warning("For production use, please add this to your .env file:")
+        logger.warning(f"ENCRYPTION_KEY={key}")
 
     # Validate and format the key
     try:
@@ -45,33 +54,58 @@ def get_or_create_key():
         if formatted_key != key:
             if not os.getenv("ENCRYPTION_KEY"):
                 KEY_FILE.write_text(formatted_key)
-            print("Note: Encryption key has been reformatted to ensure proper encoding")
+            logger.info(
+                "Note: Encryption key has been reformatted to ensure proper encoding"
+            )
 
         return formatted_key
     except Exception as e:
-        print(f"Invalid ENCRYPTION_KEY format: {e}")
+        logger.error(f"Invalid ENCRYPTION_KEY format: {e}")
         # Generate a new key if the existing one is invalid
         new_key = Fernet.generate_key().decode()
         if not os.getenv("ENCRYPTION_KEY"):
             KEY_FILE.write_text(new_key)
-        print("Generated a new key. For production use, please add to your .env file:")
-        print(f"ENCRYPTION_KEY={new_key}")
+        logger.warning(
+            "Generated a new key. For production use, please add to your .env file:"
+        )
+        logger.warning(f"ENCRYPTION_KEY={new_key}")
         return new_key
 
 
-# Initialize Fernet with the key
-fernet = Fernet(get_or_create_key().encode())
+def get_fernet():
+    """Get a fresh Fernet instance with the current key."""
+    key = get_or_create_key()
+    logger.debug(f"Using encryption key: {key[:10]}...")
+    return Fernet(key.encode())
 
 
 def encrypt_api_key(api_key: str) -> str:
     """Encrypt an API key."""
     if not api_key:
         return None
-    return fernet.encrypt(api_key.encode()).decode()
+    try:
+        logger.debug(f"Encrypting API key: {api_key[:5]}...")
+        encrypted = get_fernet().encrypt(api_key.encode()).decode()
+        logger.debug(f"Encrypted result: {encrypted[:20]}...")
+        return encrypted
+    except Exception as e:
+        logger.error(f"Error encrypting API key: {str(e)}")
+        raise
 
 
 def decrypt_api_key(encrypted_key: str) -> str:
     """Decrypt an API key."""
     if not encrypted_key:
         return None
-    return fernet.decrypt(encrypted_key.encode()).decode()
+    try:
+        logger.debug(f"Attempting to decrypt key: {encrypted_key[:20]}...")
+        decrypted = get_fernet().decrypt(encrypted_key.encode()).decode()
+        logger.debug(f"Successfully decrypted key: {decrypted[:5]}...")
+        return decrypted
+    except Exception as e:
+        logger.error(f"Error decrypting API key: {str(e)}")
+        logger.error(f"Encrypted key length: {len(encrypted_key)}")
+        logger.error(
+            f"Encrypted key format: {encrypted_key[:50] if len(encrypted_key) > 50 else encrypted_key}"
+        )
+        raise
