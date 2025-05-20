@@ -307,13 +307,18 @@ class OpenAIService:
 
             logger.info(f"Found {len(exercises)} exercises for {focus} routine")
 
+            # Create a mapping of exercise_template_id to exercise name
+            exercise_names = {
+                ex["exercise_template_id"]: ex["name"] for ex in exercises
+            }
+
             # Ensure we have enough unique exercises
             unique_exercises = []
-            seen_titles = set()
+            seen_names = set()
             for exercise in exercises:
-                if exercise["title"] not in seen_titles:
+                if exercise["name"] not in seen_names:
                     unique_exercises.append(exercise)
-                    seen_titles.add(exercise["title"])
+                    seen_names.add(exercise["name"])
                     if len(unique_exercises) >= 10:  # Limit to 10 exercises
                         break
 
@@ -344,7 +349,6 @@ class OpenAIService:
                 similar_workouts=similar_workouts,
             )
 
-            # TODO: check model, role in completion
             # Call OpenAI API
             response = self.client.chat.completions.create(
                 model="gpt-4-turbo-preview",
@@ -358,6 +362,14 @@ class OpenAIService:
                 routine_json = json.loads(response.choices[0].message.content)
                 logger.info("Generated routine JSON:")
                 logger.info(json.dumps(routine_json, indent=2))
+
+                # Add exercise names to the routine data
+                if "hevy_api" in routine_json and "routine" in routine_json["hevy_api"]:
+                    for exercise in routine_json["hevy_api"]["routine"]["exercises"]:
+                        exercise_id = exercise.get("exercise_template_id")
+                        if exercise_id in exercise_names:
+                            exercise["name"] = exercise_names[exercise_id]
+
                 return routine_json
             except json.JSONDecodeError as e:
                 logger.error(f"Error parsing JSON response: {str(e)}")
@@ -443,6 +455,9 @@ class OpenAIService:
                     ),
                 )
                 if routine_data:
+                    # Add the day and focus to the routine data
+                    routine_data["day"] = routine["day"]
+                    routine_data["focus"] = routine["focus"]
                     generated_routines.append(routine_data)
 
             if not generated_routines:
@@ -452,7 +467,7 @@ class OpenAIService:
             # Get date range
             date_range = RoutineFolderBuilder.get_date_range(period)
 
-            # Build the routine folder
+            # Build the routine folder using RoutineFolderBuilder
             routine_folder = RoutineFolderBuilder.build_routine_folder(
                 name=name,
                 description=description,

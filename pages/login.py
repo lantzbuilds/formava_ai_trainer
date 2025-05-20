@@ -74,7 +74,33 @@ def initialize_user_data(user: UserProfile):
                     vector_store.add_workout_history(workouts)
                     logger.info("Successfully vectorized workout history")
                 else:
-                    logger.info("No recent workouts found to vectorize")
+                    logger.info("No workouts found in database, fetching from Hevy API")
+                    # Fetch workouts from Hevy API
+                    workouts = hevy_api.get_workouts(start_date, end_date)
+
+                    if workouts:
+                        logger.info(f"Found {len(workouts)} workouts from Hevy API")
+                        # Save workouts to database
+                        for workout in workouts:
+                            workout_data = {
+                                "hevy_id": workout["id"],
+                                "user_id": user.id,
+                                "title": workout.get("title", "Untitled Workout"),
+                                "description": workout.get("description", ""),
+                                "start_time": workout.get("start_time"),
+                                "end_time": workout.get("end_time"),
+                                "exercises": workout.get("exercises", []),
+                                "exercise_count": len(workout.get("exercises", [])),
+                            }
+                            db.save_workout(workout_data)
+
+                        # Add workouts to vector store
+                        vector_store.add_workout_history(workouts)
+                        logger.info(
+                            "Successfully vectorized workout history from Hevy API"
+                        )
+                    else:
+                        logger.info("No workouts found in Hevy API")
 
             except Exception as e:
                 logger.error(f"Error initializing Hevy data: {str(e)}", exc_info=True)

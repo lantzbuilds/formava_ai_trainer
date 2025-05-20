@@ -409,14 +409,29 @@ class ExerciseVectorStore:
             documents = []
             for metadata, doc in zip(results["metadatas"], results["documents"]):
                 # Convert string metadata back to lists
-                muscle_groups = (
-                    metadata["muscle_groups"].split(", ")
-                    if metadata["muscle_groups"]
+                primary_muscles = (
+                    metadata["primary_muscles"].split(", ")
+                    if metadata["primary_muscles"]
                     else []
                 )
-                equipment = (
-                    metadata["equipment"].split(", ") if metadata["equipment"] else []
+                secondary_muscles = (
+                    metadata["secondary_muscles"].split(", ")
+                    if metadata["secondary_muscles"]
+                    else []
                 )
+
+                # Create muscle groups list with primary/secondary flags
+                muscle_groups = []
+                for muscle in primary_muscles:
+                    muscle_groups.append({"name": muscle, "is_primary": True})
+                for muscle in secondary_muscles:
+                    muscle_groups.append({"name": muscle, "is_primary": False})
+
+                # Parse equipment from metadata
+                equipment_str = metadata.get("equipment", "")
+                equipment = [
+                    {"name": name.strip()} for name in equipment_str.split(",")
+                ]
 
                 # Create a new metadata dictionary with the correct structure
                 new_metadata = {
@@ -606,7 +621,7 @@ class ExerciseVectorStore:
             results = self.vectorstore.similarity_search_with_score(
                 query=query,
                 k=k,
-                filter={"user_id": user_id, "type": "workout_history"},
+                filter={"$and": [{"user_id": user_id}, {"type": "workout_history"}]},
             )
 
             logger.info(f"Found {len(results)} similar workouts")

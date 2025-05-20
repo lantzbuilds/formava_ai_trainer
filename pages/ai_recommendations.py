@@ -41,13 +41,39 @@ def ai_recommendations_page():
     user = UserProfile(**user_doc)
 
     # Get user's recent workouts
-    end_date = datetime.now()
+    end_date = datetime.now(timezone.utc)
     start_date = end_date - timedelta(days=30)
+    logger.info(f"Fetching workouts from {start_date} to {end_date}")
+
+    # First try to get workouts from database
     workouts = db.get_user_workout_history(
         st.session_state.user_id, start_date, end_date
     )
 
-    # TODO: get embeddings for workouts; add to vector store
+    # If no workouts found, fetch from Hevy API
+    if not workouts:
+        logger.info("No workouts found in database, fetching from Hevy API")
+        try:
+            hevy_api = HevyAPI(user.hevy_api_key)
+            workouts = hevy_api.get_workout_history(
+                user_id=st.session_state.user_id,
+                start_date=start_date,
+                end_date=end_date,
+            )
+
+            # Save workouts to database
+            if workouts:
+                logger.info(f"Saving {len(workouts)} workouts to database")
+                for workout in workouts:
+                    db.save_workout(workout, user_id=st.session_state.user_id)
+
+                # Add workouts to vector store
+                logger.info("Adding workouts to vector store")
+                vector_store.add_workout_history(workouts)
+        except Exception as e:
+            logger.error(f"Error fetching workouts from Hevy API: {str(e)}")
+            st.error("Failed to fetch workout history from Hevy")
+            workouts = []
 
     # Get available exercises
     # TODO: check when (custom) exercises populate db; only on sync_hevy?

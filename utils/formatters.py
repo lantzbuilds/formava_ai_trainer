@@ -12,14 +12,14 @@ def format_routine_markdown(routine: dict) -> str:
 
     routine_data = routine["hevy_api"]["routine"]
 
-    # Start with the routine title and description
-    markdown = f"## {routine_data['title']}\n\n"
+    # Start with the routine name and description
+    markdown = f"## {routine_data['name']}\n\n"
     if "notes" in routine_data and routine_data["notes"]:
         markdown += f"*{routine_data['notes']}*\n\n"
 
     # Add each exercise
     for exercise in routine_data.get("exercises", []):
-        markdown += f"### {exercise['title']}\n"
+        markdown += f"### {exercise['name']}\n"
 
         # Add exercise description if available
         if "exercise_description" in exercise and exercise["exercise_description"]:
