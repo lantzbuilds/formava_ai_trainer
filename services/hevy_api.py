@@ -174,10 +174,24 @@ class HevyAPI:
         try:
             response = requests.post(url, headers=self.headers, json=workout_data)
             response.raise_for_status()
-            return response.json().get("id")
+
+            # Extract workout ID from the response
+            response_data = response.json()
+            if (
+                "workout" in response_data
+                and isinstance(response_data["workout"], list)
+                and len(response_data["workout"]) > 0
+            ):
+                return response_data["workout"][0].get("id")
+            else:
+                logger.error("Failed to extract workout ID from response")
+                return None
         except requests.exceptions.RequestException as e:
-            print(f"Error creating workout: {e}")
-            return None
+            logger.error(f"Error creating workout: {str(e)}")
+            if hasattr(e, "response"):
+                logger.error(f"API Response Status: {e.response.status_code}")
+                logger.error(f"API Response Content: {e.response.text}")
+            raise  # Re-raise the exception to be handled by the caller
 
     def get_routines(self) -> List[Dict[str, Any]]:
         """

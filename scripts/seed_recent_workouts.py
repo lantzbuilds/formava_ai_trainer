@@ -3,13 +3,18 @@
 Script to seed recent workout history for the test user.
 """
 
+import json
 import logging
 import random
 from datetime import datetime, timedelta, timezone
+from typing import Dict, List
+
+import requests
 
 from config.database import Database
 from models.user import UserProfile
 from services.hevy_api import HevyAPI
+from services.vector_store import ExerciseVectorStore
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -37,13 +42,46 @@ def get_test_user() -> UserProfile:
     return test_user
 
 
-def create_workout(hevy_api: HevyAPI, workout_date: datetime, day_number: int) -> bool:
+def get_exercise_templates() -> Dict[str, str]:
+    """Get valid exercise templates from our database.
+
+    Returns:
+        Dictionary mapping exercise names to their template IDs
+    """
+    try:
+        # Initialize database and vector store
+        db = Database()
+        vector_store = ExerciseVectorStore()
+
+        # Get all exercises from the database
+        exercises = db.get_exercises(include_custom=True)
+        logger.info(f"Found {len(exercises)} exercises in the database")
+
+        # Create a mapping of exercise names to their template IDs
+        exercise_map = {}
+        for exercise in exercises:
+            exercise_map[exercise["title"].lower()] = exercise["id"]
+
+        logger.info(f"Created mapping with {len(exercise_map)} exercise templates")
+        return exercise_map
+    except Exception as e:
+        logger.error(f"Error fetching exercise templates: {str(e)}")
+        return {}
+
+
+def create_workout(
+    hevy_api: HevyAPI,
+    workout_date: datetime,
+    day_number: int,
+    exercise_map: Dict[str, str],
+) -> bool:
     """Create a workout in Hevy.
 
     Args:
         hevy_api: HevyAPI instance
         workout_date: Date for the workout
         day_number: Number of days ago (0 = today, 1 = yesterday, etc.)
+        exercise_map: Dictionary mapping exercise names to their template IDs
 
     Returns:
         True if successful, False otherwise
@@ -54,10 +92,10 @@ def create_workout(hevy_api: HevyAPI, workout_date: datetime, day_number: int) -
         start_time = workout_date
         end_time = start_time + timedelta(minutes=duration_minutes)
 
-        # Sample exercises with their template IDs and base weights
+        # Sample exercises with their base weights
         exercises = [
             {
-                "exercise_template_id": "C6272009",  # Deadlift (Barbell)
+                "name": "deadlift (barbell)",
                 "notes": "Focus on form and depth",
                 "base_weight": 60,  # Starting weight in kg
                 "weight_increment": 2.5,  # Weight increase per week
@@ -65,7 +103,7 @@ def create_workout(hevy_api: HevyAPI, workout_date: datetime, day_number: int) -
                 "reps_increment": 1,  # Rep increase per week
             },
             {
-                "exercise_template_id": "79D0BB3A",  # Bench Press (Barbell)
+                "name": "bench press (barbell)",
                 "notes": "Control the descent",
                 "base_weight": 40,
                 "weight_increment": 2.5,
@@ -73,7 +111,7 @@ def create_workout(hevy_api: HevyAPI, workout_date: datetime, day_number: int) -
                 "reps_increment": 1,
             },
             {
-                "exercise_template_id": "55E6546F",  # Bent Over Row (Barbell)
+                "name": "bent over row (barbell)",
                 "notes": "Keep back straight",
                 "base_weight": 35,
                 "weight_increment": 2.5,
@@ -81,15 +119,15 @@ def create_workout(hevy_api: HevyAPI, workout_date: datetime, day_number: int) -
                 "reps_increment": 1,
             },
             {
-                "exercise_template_id": "3BC06AD3",  # 21s Bicep Curl
+                "name": "bicep curl (dumbbell)",
                 "notes": "Full range of motion",
                 "base_weight": 15,
                 "weight_increment": 1.25,
-                "base_reps": 21,  # Special case for 21s
-                "reps_increment": 0,
+                "base_reps": 12,
+                "reps_increment": 1,
             },
             {
-                "exercise_template_id": "A1B2C3D4",  # Squat (Barbell)
+                "name": "squat (barbell)",
                 "notes": "Maintain proper form",
                 "base_weight": 50,
                 "weight_increment": 2.5,
@@ -115,6 +153,12 @@ def create_workout(hevy_api: HevyAPI, workout_date: datetime, day_number: int) -
 
         # Add exercises with progressive weights/reps
         for exercise in exercises:
+            # Get the exercise template ID
+            exercise_name = exercise["name"].lower()
+            if exercise_name not in exercise_map:
+                logger.warning(f"Exercise template not found: {exercise_name}")
+                continue
+
             # Calculate progressive weight and reps
             current_weight = exercise["base_weight"] + (
                 weeks_progressed * exercise["weight_increment"]
@@ -151,20 +195,50 @@ def create_workout(hevy_api: HevyAPI, workout_date: datetime, day_number: int) -
 
             workout_data["workout"]["exercises"].append(
                 {
-                    "exercise_template_id": exercise["exercise_template_id"],
+                    "exercise_template_id": exercise_map[exercise_name],
                     "superset_id": None,
                     "notes": exercise.get("notes", ""),
                     "sets": sets,
                 }
             )
 
-        # Create the workout in Hevy
-        workout_id = hevy_api.create_workout(workout_data)
-        if workout_id:
-            logger.info(f"Created workout with ID: {workout_id}")
-            return True
-        else:
-            logger.error("Failed to create workout")
+        # Log the workout data before sending
+        logger.info("Creating workout with data:")
+        logger.info(json.dumps(workout_data, indent=2))
+
+        # Create workout in Hevy with detailed error logging
+        try:
+            # Get the raw response from the API
+            url = f"{hevy_api.base_url}/workouts"
+            response = requests.post(url, headers=hevy_api.headers, json=workout_data)
+
+            # Log the response status and content
+            logger.info(f"API Response Status: {response.status_code}")
+            logger.info(f"API Response Content: {response.text}")
+
+            # Check if the request was successful
+            if response.status_code == 200 or response.status_code == 201:
+                # Extract workout ID from the response
+                response_data = response.json()
+                if (
+                    "workout" in response_data
+                    and isinstance(response_data["workout"], list)
+                    and len(response_data["workout"]) > 0
+                ):
+                    workout_id = response_data["workout"][0].get("id")
+                    logger.info(f"Created workout with ID: {workout_id}")
+                    return True
+                else:
+                    logger.error("Failed to extract workout ID from response")
+                    return False
+            else:
+                logger.error(
+                    f"Failed to create workout. Status code: {response.status_code}"
+                )
+                logger.error(f"Error response: {response.text}")
+                return False
+        except Exception as e:
+            logger.error(f"Exception while creating workout: {str(e)}")
             return False
 
     except Exception as e:
@@ -182,7 +256,13 @@ def seed_recent_workouts(user_id: str, api_key: str, days: int = 30) -> None:
     """
     try:
         # Initialize services
-        hevy_api = HevyAPI(api_key, is_encrypted=False)
+        hevy_api = HevyAPI(api_key, is_encrypted=True)
+
+        # Get valid exercise templates
+        exercise_map = get_exercise_templates()
+        if not exercise_map:
+            logger.error("Failed to get exercise templates")
+            return
 
         # Create workouts for the past days
         workouts_created = 0
@@ -197,7 +277,7 @@ def seed_recent_workouts(user_id: str, api_key: str, days: int = 30) -> None:
             )
 
             # Create the workout
-            if create_workout(hevy_api, workout_date, day):
+            if create_workout(hevy_api, workout_date, day, exercise_map):
                 workouts_created += 1
 
         logger.info(
