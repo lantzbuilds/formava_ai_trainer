@@ -14,15 +14,15 @@ from dotenv import load_dotenv
 from bootstrap_vectorstore import bootstrap_vectorstore
 from config.database import Database
 from models.user import FitnessGoal, Injury, InjurySeverity, Sex, UserProfile
-from pages.ai_recommendations import ai_recommendations_page
-from pages.dashboard import dashboard_page
-from pages.login import login_page
-from pages.profile import profile_page
-from pages.register import register_page
-from pages.routines import routines_page
-from pages.sync_hevy import sync_hevy_page
-from pages.workout_history import workout_history_page
-from pages.workout_preferences import workout_preferences_page
+from page_components.ai_recommendations import ai_recommendations_page
+from page_components.dashboard import dashboard_page
+from page_components.login import login_page
+from page_components.profile import profile_page
+from page_components.register import register_page
+from page_components.routines import routines_page
+from page_components.sync_hevy import sync_hevy_page
+from page_components.workout_history import workout_history_page
+from page_components.workout_preferences import workout_preferences_page
 from services.hevy_api import HevyAPI
 from services.openai_service import OpenAIService
 from utils.crypto import decrypt_api_key, encrypt_api_key
