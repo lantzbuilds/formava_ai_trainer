@@ -12,7 +12,9 @@ from config.database import Database
 from models.user import UserProfile
 from services.hevy_api import HevyAPI
 from services.openai_service import OpenAIService
+from services.routine_folder_builder import RoutineFolderBuilder
 from services.vector_store import ExerciseVectorStore
+from utils.formatters import format_routine_markdown
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -24,6 +26,7 @@ openai_service = OpenAIService()
 vector_store = ExerciseVectorStore()
 
 
+# TODO: refactor render function into "component" fns
 def ai_recommendations_page():
     """Display the AI recommendations page."""
     st.title("AI Recommendations")
@@ -38,13 +41,42 @@ def ai_recommendations_page():
     user = UserProfile(**user_doc)
 
     # Get user's recent workouts
-    end_date = datetime.now()
+    end_date = datetime.now(timezone.utc)
     start_date = end_date - timedelta(days=30)
+    logger.info(f"Fetching workouts from {start_date} to {end_date}")
+
+    # First try to get workouts from database
     workouts = db.get_user_workout_history(
         st.session_state.user_id, start_date, end_date
     )
 
+    # If no workouts found, fetch from Hevy API
+    if not workouts:
+        logger.info("No workouts found in database, fetching from Hevy API")
+        try:
+            hevy_api = HevyAPI(user.hevy_api_key)
+            workouts = hevy_api.get_workout_history(
+                user_id=st.session_state.user_id,
+                start_date=start_date,
+                end_date=end_date,
+            )
+
+            # Save workouts to database
+            if workouts:
+                logger.info(f"Saving {len(workouts)} workouts to database")
+                for workout in workouts:
+                    db.save_workout(workout, user_id=st.session_state.user_id)
+
+                # Add workouts to vector store
+                logger.info("Adding workouts to vector store")
+                vector_store.add_workout_history(workouts)
+        except Exception as e:
+            logger.error(f"Error fetching workouts from Hevy API: {str(e)}")
+            st.error("Failed to fetch workout history from Hevy")
+            workouts = []
+
     # Get available exercises
+    # TODO: check when (custom) exercises populate db; only on sync_hevy?
     exercises = db.get_exercises(user_id=st.session_state.user_id, include_custom=True)
 
     # Display user's profile summary
@@ -105,12 +137,49 @@ def ai_recommendations_page():
                         muscle_groups[muscle_name] = 0
                     muscle_groups[muscle_name] += 1
 
+        # TODO: likely remove this section
         st.write("**Exercises by primary muscle group:**")
         for muscle, count in muscle_groups.items():
             st.write(f"- {muscle}: {count}")
 
+    # Get user preferences for routine generation
+    st.subheader("Routine Generation Preferences")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        split_type = st.selectbox(
+            "Workout Split Type",
+            ["auto", "full_body", "upper_lower", "push_pull"],
+            help="Choose how to split your workouts. 'auto' will determine based on your experience level and days per week.",
+        )
+    with col2:
+        period = st.selectbox(
+            "Time Period",
+            ["week", "month"],
+            help="Generate routines for the upcoming week or month",
+        )
+    with col3:
+        include_cardio = st.checkbox(
+            "Include Cardio",
+            value=True,
+            help="Include cardio exercises in the generated routines",
+        )
+
+    # Get date range for the folder name
+    date_range = RoutineFolderBuilder.get_date_range(period)
+    suggested_title = (
+        f"{split_type.replace('_', ' ').title()} Workout Plan - {date_range}"
+    )
+
+    # Add editable title field
+    routine_title = st.text_input(
+        "Routine Folder Title",
+        value=suggested_title,
+        help="Edit the title for your workout routine folder",
+    )
+
     # Generate recommendations
     if st.button("Generate Recommendations"):
+        # TODO: if possible, change spinner messages on intervals, or add a progress bar
         with st.spinner("Generating workout recommendations..."):
             try:
                 # Create context for routine generation
@@ -132,21 +201,43 @@ def ai_recommendations_page():
                             "days_per_week": user.preferred_workout_days,
                         },
                     },
+                    "generation_preferences": {
+                        "split_type": split_type,
+                        "include_cardio": include_cardio,
+                    },
                 }
 
-                # Generate routine folder
+                # Generate the routine folder
                 routine_folder = openai_service.generate_routine_folder(
-                    name="AI-Generated Workout Plan",
+                    name=routine_title,
                     description="Personalized workout plan based on your profile and goals",
                     context=context,
-                    period="week",
+                    period=period,
                 )
 
                 if routine_folder:
-                    st.success("Successfully generated workout recommendations!")
-                    st.json(routine_folder)
+                    # Store the generated routine in session state
+                    st.session_state.generated_routine = routine_folder
+
+                    # Display the generated routine folder
+                    st.success("Routine folder generated successfully!")
+
+                    # Display folder information
+                    st.markdown(f"## {routine_folder['name']}")
+                    st.markdown(f"*{routine_folder['description']}*")
+                    st.markdown(
+                        f"**Split Type:** {routine_folder['split_type'].replace('_', ' ').title()}"
+                    )
+                    st.markdown(f"**Days per Week:** {routine_folder['days_per_week']}")
+                    st.markdown(f"**Period:** {routine_folder['period'].title()}")
+                    st.markdown(f"**Date Range:** {routine_folder['date_range']}")
+
+                    # Display each routine
+                    for routine in routine_folder["routines"]:
+                        st.markdown("---")  # Add a separator between routines
+                        st.markdown(format_routine_markdown(routine))
                 else:
-                    st.error("Failed to generate workout recommendations")
+                    st.error("Failed to generate routine folder. Please try again.")
             except Exception as e:
                 logger.error(f"Error generating recommendations: {str(e)}")
                 st.error(f"Error generating recommendations: {str(e)}")
@@ -154,3 +245,22 @@ def ai_recommendations_page():
         st.info(
             "Click the button above to generate personalized workout recommendations based on your profile and workout history."
         )
+    # TODO: redirect to Routines page after saving to Hevy? or display saved routine here?
+    # Save to Hevy button (outside the generation block)
+    if "generated_routine" in st.session_state:
+        if st.button("Save to Hevy"):
+            try:
+                hevy_api = HevyAPI(user.hevy_api_key)
+                saved_folder = hevy_api.save_routine_folder(
+                    routine_folder=st.session_state.generated_routine,
+                    user_id=st.session_state.user_id,
+                    db=db,
+                )
+
+                if saved_folder:
+                    st.success("Routine folder saved to Hevy successfully!")
+                else:
+                    st.error("Failed to save routine folder to Hevy. Please try again.")
+            except Exception as e:
+                logger.error(f"Error saving to Hevy: {str(e)}")
+                st.error(f"Error saving to Hevy: {str(e)}")
