@@ -25,7 +25,7 @@ COUCHDB_DB = os.getenv("COUCHDB_DB", "ai_trainer")
 
 
 class Database:
-    def __init__(self, auto_connect: bool = True):
+    def __init__(self):
         """Initialize the database connection."""
         try:
             if COUCHDB_USER and COUCHDB_PASSWORD:
@@ -34,6 +34,10 @@ class Database:
                 self.server = couchdb.Server(full_url)
                 self.server.resource.credentials = (COUCHDB_USER, COUCHDB_PASSWORD)
                 self.couchdb_url = full_url
+                # Store credentials and db name for later use
+                self.couchdb_user = COUCHDB_USER
+                self.couchdb_password = COUCHDB_PASSWORD
+                self.couchdb_db = COUCHDB_DB
                 logger.info(
                     f"Connecting to CouchDB at {full_url} using user: {COUCHDB_USER}"
                 )
@@ -43,6 +47,10 @@ class Database:
                     raise ValueError("COUCHDB_URL is required for production mode.")
                 self.server = couchdb.Server(COUCHDB_URL)
                 self.couchdb_url = COUCHDB_URL
+                # Store credentials and db name for later use
+                self.couchdb_user = COUCHDB_USER
+                self.couchdb_password = COUCHDB_PASSWORD
+                self.couchdb_db = COUCHDB_DB
                 logger.info(f"Connecting to CouchDB at COUCHDB_URL={COUCHDB_URL}")
 
             # Ensure database exists
@@ -56,58 +64,29 @@ class Database:
             logger.error(f"Error connecting to CouchDB: {e}")
             raise
 
-        if auto_connect:
-            self.connect()
-
     def connect(self):
-        """Connect to the CouchDB server and get or create the database."""
-        # TODO: why it this called multiple times when launching the app?
+        """Reconnect to CouchDB using stored URL and credentials."""
         try:
-            logger.info(f"Connecting to CouchDB at {self.couchdb_url}")
-
-            # Create server with authentication
+            logger.info(f"Reconnecting to CouchDB at {self.couchdb_url}")
             self.server = couchdb.Server(self.couchdb_url)
 
-            # Set credentials if provided
-            if self.couchdb_user and self.couchdb_password:
-                self.server.resource.credentials = (
-                    self.couchdb_user,
-                    self.couchdb_password,
-                )
-                logger.info(f"Using authentication with user: {self.couchdb_user}")
+            # Only set credentials if using local dev mode
+            if COUCHDB_USER and COUCHDB_PASSWORD:
+                self.server.resource.credentials = (COUCHDB_USER, COUCHDB_PASSWORD)
+                logger.info(f"Using authentication with user: {COUCHDB_USER}")
+
+            # Reconnect to existing database
+            if COUCHDB_DB in self.server:
+                self.db = self.server[COUCHDB_DB]
+                logger.info(f"Reconnected to database: {COUCHDB_DB}")
             else:
-                logger.warning(
-                    "No CouchDB credentials provided. Using anonymous access."
-                )
+                logger.info(f"Database {COUCHDB_DB} does not exist. Creating...")
+                self.db = self.server.create(COUCHDB_DB)
+                logger.info(f"Database {COUCHDB_DB} created successfully")
 
-            # Check if database exists, create if not
-            try:
-                if self.db_name not in self.server:
-                    logger.info(f"Database {self.db_name} does not exist. Creating...")
-                    self.db = self.server.create(self.db_name)
-                    logger.info(f"Database {self.db_name} created successfully")
-                else:
-                    logger.info(f"Database {self.db_name} already exists")
-                    self.db = self.server[self.db_name]
-            except couchdb.http.Unauthorized:
-                logger.error(
-                    "Authentication failed. Please check your CouchDB credentials."
-                )
-                # Try to connect without authentication as fallback
-                logger.info("Attempting to connect without authentication...")
-                self.server = couchdb.Server(self.couchdb_url)
-                if self.db_name not in self.server:
-                    self.db = self.server.create(self.db_name)
-                else:
-                    self.db = self.server[self.db_name]
-
-            # Create design documents if they don't exist
-            self._create_design_documents()
         except Exception as e:
-            logger.error(f"Error connecting to CouchDB: {str(e)}")
-            # Create a mock database for development
-            logger.warning("Creating mock database for development")
-            self._create_mock_database()
+            logger.error(f"Error reconnecting to CouchDB: {str(e)}")
+            raise
 
     def _create_mock_database(self):
         """Create a mock database for development when CouchDB is not available."""
