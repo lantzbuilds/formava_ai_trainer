@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import couchdb
 from dotenv import load_dotenv
 
+from config import COUCHDB_DB, COUCHDB_PASSWORD, COUCHDB_URL, COUCHDB_USER
+
 from .views import create_user_views, create_workout_views
 
 # Load environment variables
@@ -18,14 +20,15 @@ logger = logging.getLogger(__name__)
 
 
 class Database:
-    def __init__(self):
+    def __init__(self, auto_connect: bool = True):
         """Initialize the database connection."""
-        self.couchdb_url = os.getenv("COUCHDB_URL", "http://localhost:5984")
-        self.couchdb_user = os.getenv("COUCHDB_USER", "admin")
-        self.couchdb_password = os.getenv("COUCHDB_PASSWORD", "password")
-        self.db_name = os.getenv("COUCHDB_DB", "ai_personal_trainer")
+        self.couchdb_url = COUCHDB_URL or "http://localhost:5984"
+        self.couchdb_user = COUCHDB_USER or "admin"
+        self.couchdb_password = COUCHDB_PASSWORD or "admin"
+        self.db_name = COUCHDB_DB or "ai_trainer"
         self.db = None
-        self.connect()
+        if auto_connect:
+            self.connect()
 
     def connect(self):
         """Connect to the CouchDB server and get or create the database."""
