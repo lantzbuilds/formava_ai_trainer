@@ -18,15 +18,42 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+COUCHDB_URL = os.getenv("COUCHDB_URL")
+COUCHDB_USER = os.getenv("COUCHDB_USER")
+COUCHDB_PASSWORD = os.getenv("COUCHDB_PASSWORD")
+COUCHDB_DB = os.getenv("COUCHDB_DB", "ai_trainer")
+
 
 class Database:
     def __init__(self, auto_connect: bool = True):
         """Initialize the database connection."""
-        self.couchdb_url = COUCHDB_URL or "http://localhost:5984"
-        self.couchdb_user = COUCHDB_USER or "admin"
-        self.couchdb_password = COUCHDB_PASSWORD or "admin"
-        self.db_name = COUCHDB_DB or "ai_trainer"
-        self.db = None
+        try:
+            if COUCHDB_USER and COUCHDB_PASSWORD:
+                # Local dev with username/password
+                full_url = COUCHDB_URL or "http://localhost:5984"
+                self.server = couchdb.Server(full_url)
+                self.server.resource.credentials = (COUCHDB_USER, COUCHDB_PASSWORD)
+                logger.info(
+                    f"Connecting to CouchDB at {full_url} using user: {COUCHDB_USER}"
+                )
+            else:
+                # Production with embedded credentials in URL
+                if not COUCHDB_URL:
+                    raise ValueError("COUCHDB_URL is required for production mode.")
+                self.server = couchdb.Server(COUCHDB_URL)
+                logger.info(f"Connecting to CouchDB at COUCHDB_URL={COUCHDB_URL}")
+
+            # Ensure database exists
+            if COUCHDB_DB in self.server:
+                self.db = self.server[COUCHDB_DB]
+            else:
+                logger.info(f"Database {COUCHDB_DB} does not exist. Creating...")
+                self.db = self.server.create(COUCHDB_DB)
+
+        except Exception as e:
+            logger.error(f"Error connecting to CouchDB: {e}")
+            raise
+
         if auto_connect:
             self.connect()
 
