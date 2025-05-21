@@ -33,6 +33,7 @@ class Database:
                 full_url = COUCHDB_URL or "http://localhost:5984"
                 self.server = couchdb.Server(full_url)
                 self.server.resource.credentials = (COUCHDB_USER, COUCHDB_PASSWORD)
+                self.couchdb_url = full_url
                 logger.info(
                     f"Connecting to CouchDB at {full_url} using user: {COUCHDB_USER}"
                 )
@@ -41,6 +42,7 @@ class Database:
                 if not COUCHDB_URL:
                     raise ValueError("COUCHDB_URL is required for production mode.")
                 self.server = couchdb.Server(COUCHDB_URL)
+                self.couchdb_url = COUCHDB_URL
                 logger.info(f"Connecting to CouchDB at COUCHDB_URL={COUCHDB_URL}")
 
             # Ensure database exists
