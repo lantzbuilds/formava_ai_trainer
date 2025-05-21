@@ -315,6 +315,16 @@ class Database:
 
         return self.db.save(design_doc)
 
+    def get_all_workouts(self) -> List[Dict[str, Any]]:
+        """Retrieve all workout documents across all users."""
+        try:
+            return [
+                row.doc for row in self.db.view("workouts/by_date", include_docs=True)
+            ]
+        except Exception as e:
+            logger.error(f"Error fetching all workouts: {str(e)}")
+            return []
+
     def get_workouts_by_date_range(self, start_date, end_date):
         """Get workouts within a date range."""
         try:
