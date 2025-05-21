@@ -3,9 +3,12 @@ Vector store service for the AI Personal Trainer application.
 """
 
 import logging
+import os
 import uuid
 from typing import Any, Dict, List, Optional
 
+from langchain.embeddings import CacheBackedEmbeddings
+from langchain.storage import LocalFileStore
 from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
@@ -32,20 +35,51 @@ class ExerciseVectorStore:
 
     @property
     def embeddings(self):
-        """Lazy load the embeddings model."""
+        """Lazy load the embeddings model with caching."""
         if self._embeddings is None:
-            self._embeddings = OpenAIEmbeddings()
+            # Create a local file store for caching embeddings
+            cache_dir = os.path.join(self.persist_directory, "embeddings_cache")
+            os.makedirs(cache_dir, exist_ok=True)
+            store = LocalFileStore(cache_dir)
+
+            # Create the base embeddings
+            base_embeddings = OpenAIEmbeddings()
+
+            # Create cached embeddings
+            self._embeddings = CacheBackedEmbeddings.from_bytes_store(
+                base_embeddings, store, namespace="exercise_embeddings"
+            )
+            logger.info("Initialized embeddings with caching")
         return self._embeddings
 
     @property
     def vectorstore(self):
         """Lazy load the vector store."""
         if self._vectorstore is None:
-            self._vectorstore = Chroma(
-                collection_name="exercises",
-                embedding_function=self.embeddings,
-                persist_directory=self.persist_directory,
-            )
+            # First try to load from persistence
+            try:
+                self._vectorstore = Chroma(
+                    collection_name="exercises",
+                    embedding_function=self.embeddings,
+                    persist_directory=self.persist_directory,
+                )
+                # Check if the collection has any documents
+                collection = self._vectorstore._collection
+                if collection.count() > 0:
+                    logger.info(
+                        f"Loaded existing vector store with {collection.count()} documents"
+                    )
+                else:
+                    logger.info("No existing vector store found, creating new one")
+                    # If no documents, we'll need to add them later
+            except Exception as e:
+                logger.warning(f"Error loading vector store: {e}")
+                logger.info("Creating new vector store")
+                self._vectorstore = Chroma(
+                    collection_name="exercises",
+                    embedding_function=self.embeddings,
+                    persist_directory=self.persist_directory,
+                )
         return self._vectorstore
 
     def add_exercises(self, exercises: List[Dict]) -> None:
@@ -61,114 +95,220 @@ class ExerciseVectorStore:
             metadatas = []
             ids = []
 
+            # Define standard muscle group mappings
+            muscle_group_mapping = {
+                "upper_back": "back",
+                "lower_back": "back",
+                "middle_back": "back",
+                "lats": "back",
+                "traps": "back",
+                "chest": "chest",
+                "pectorals": "chest",
+                "shoulders": "shoulders",
+                "deltoids": "shoulders",
+                "arms": "arms",
+                "biceps": "arms",
+                "triceps": "arms",
+                "forearms": "arms",
+                "legs": "legs",
+                "quadriceps": "legs",
+                "hamstrings": "legs",
+                "calves": "legs",
+                "glutes": "legs",
+                "core": "core",
+                "abs": "core",
+                "abdominals": "core",
+                "obliques": "core",
+                "cardio": "cardio",
+            }
+
             for exercise in exercises:
-                # Create document content
-                content = (
-                    f"{exercise.get('name', '')} - {exercise.get('description', '')}"
-                )
+                # Get title from name if title is not present
+                title = exercise.get("title") or exercise.get("name")
 
-                # Convert muscle groups to comma-separated string
-                muscle_groups = exercise.get("muscle_groups", [])
-                muscle_groups_str = ", ".join(
-                    [
-                        f"{mg['name']}({'primary' if mg.get('is_primary') else 'secondary'})"
-                        for mg in muscle_groups
-                    ]
-                )
+                # Skip if exercise is missing required fields
+                if not title or not exercise.get("muscle_groups"):
+                    logger.warning(
+                        f"Skipping exercise due to missing required fields: {exercise}"
+                    )
+                    continue
 
-                # Convert equipment to comma-separated string
-                equipment = exercise.get("equipment", [])
-                equipment_str = ", ".join([eq.get("name", "") for eq in equipment])
+                # Get primary and secondary muscle groups
+                primary_muscles = set()  # Using set to prevent duplicates
+                secondary_muscles = set()  # Using set to prevent duplicates
 
-                # Get exercise ID and use it as the exercise template ID
+                for muscle in exercise.get("muscle_groups", []):
+                    muscle_name = muscle.get("name", "").lower()
+                    mapped_name = muscle_group_mapping.get(muscle_name, muscle_name)
+
+                    if muscle.get("is_primary", False):
+                        primary_muscles.add(muscle_name)  # Add specific muscle
+                        primary_muscles.add(mapped_name)  # Add mapped category
+                    else:
+                        secondary_muscles.add(muscle_name)  # Add specific muscle
+                        secondary_muscles.add(mapped_name)  # Add mapped category
+
+                # If no primary muscles found, skip the exercise
+                if not primary_muscles:
+                    logger.warning(
+                        f"Skipping exercise with no primary muscles: {exercise}"
+                    )
+                    continue
+
+                # Convert sets back to lists for metadata
+                primary_muscles = list(primary_muscles)
+                secondary_muscles = list(secondary_muscles)
+
+                # Get exercise ID
                 exercise_id = exercise.get("id", str(uuid.uuid4()))
 
-                # Create metadata with simple types
+                # Get equipment
+                equipment = []
+                for item in exercise.get("equipment", []):
+                    if item.get("name") and item.get("name") != "none":
+                        equipment.append(item.get("name"))
+
+                # Create document content with all muscle groups
+                content = (
+                    f"{title} - "
+                    f"Primary muscles: {', '.join(primary_muscles)} - "
+                    f"Secondary muscles: {', '.join(secondary_muscles)} - "
+                    f"Equipment: {', '.join(equipment) if equipment else 'bodyweight'}"
+                )
+
+                # Create metadata with muscle groups as comma-separated strings
                 metadata = {
-                    "id": exercise_id,
-                    "name": exercise.get("name", ""),
-                    "title": exercise.get(
-                        "name", ""
-                    ),  # Keep both for backward compatibility
-                    "description": exercise.get("description", ""),
-                    "muscle_groups": muscle_groups_str,
-                    "equipment": equipment_str,
-                    "difficulty": exercise.get("difficulty", "beginner"),
-                    "exercise_template_id": exercise_id,  # Use the exercise ID as the template ID
+                    "id": str(exercise_id),
+                    "title": str(title),
+                    "primary_muscles": ", ".join(primary_muscles),
+                    "secondary_muscles": ", ".join(secondary_muscles),
+                    "equipment": str(
+                        ", ".join(equipment) if equipment else "bodyweight"
+                    ),
+                    "exercise_template_id": str(exercise_id),
+                    "type": str(exercise.get("type", "weight_reps")),
+                    "is_custom": bool(exercise.get("is_custom", False)),
                 }
 
                 documents.append(content)
                 metadatas.append(metadata)
-                ids.append(exercise_id)
+                ids.append(str(exercise_id))
 
             # Add to vector store
             self.vectorstore.add_texts(texts=documents, metadatas=metadatas, ids=ids)
+            # Persist the vector store to disk
+            self.vectorstore.persist()
 
             logger.info(f"Added {len(exercises)} exercises to vector store")
+            if documents and metadatas:
+                logger.info("Sample of added exercise:")
+                logger.info(f"Content: {documents[0]}")
+                logger.info(f"Metadata: {metadatas[0]}")
         except Exception as e:
             logger.error(f"Error adding exercises to vector store: {str(e)}")
+            raise  # Re-raise the exception to see the full traceback
 
     def search_exercises(
-        self, query: str, filter_criteria: Optional[Dict] = None, k: int = 10
-    ) -> List[Dict[str, Any]]:
+        self,
+        query: str,
+        filter_criteria: Optional[Dict] = None,
+        k: int = 5,
+    ) -> List[Dict]:
         """
-        Search for exercises based on query and filter criteria.
+        Search for exercises using similarity search.
 
         Args:
-            query: Search query
-            filter_criteria: Optional filter criteria
-            k: Number of results to return
+            query (str): Search query
+            filter_criteria (Optional[Dict]): Filter criteria for the search
+            k (int): Number of results to return
 
         Returns:
-            List of exercise dictionaries
+            List[Dict]: List of exercise dictionaries
         """
         try:
+            # Check if this is a general category search
+            is_general_category = query.lower() in [
+                "arms",
+                "legs",
+                "back",
+                "chest",
+                "shoulders",
+                "core",
+            ]
+
+            # Standardize the query format
+            if "Primary muscles:" not in query:
+                if is_general_category:
+                    # For general categories, only search primary muscles
+                    query = f"Primary muscles: {query}"
+                else:
+                    # For specific muscles, search both primary and secondary
+                    query = f"Primary muscles: {query} OR Secondary muscles: {query}"
+
+            # Convert filter criteria to ChromaDB format
+            where = {}
+            if filter_criteria and "equipment" in filter_criteria:
+                where["equipment"] = filter_criteria["equipment"]
+
+            logger.info(f"Searching with query: {query}")
+            logger.info(f"Filter criteria: {where}")
+
             # Perform similarity search
             results = self.vectorstore.similarity_search_with_score(
-                query, k=k, filter=filter_criteria
+                query=query,
+                k=k,
+                filter=where if where else None,
             )
+
+            logger.info(f"Found {len(results)} results")
 
             # Process results
             exercises = []
             for doc, score in results:
-                # Parse muscle groups string back into list of dictionaries
-                muscle_groups = []
-                if doc.metadata["muscle_groups"]:
-                    for mg_str in doc.metadata["muscle_groups"].split(", "):
-                        if "(" in mg_str:
-                            name, role = mg_str.split("(")
-                            role = role.rstrip(")")
-                            muscle_groups.append(
-                                {"name": name, "is_primary": role == "primary"}
-                            )
-                        else:
-                            muscle_groups.append({"name": mg_str, "is_primary": False})
+                try:
+                    # Parse muscle groups from metadata
+                    primary_muscles_str = doc.metadata.get("primary_muscles", "")
+                    secondary_muscles_str = doc.metadata.get("secondary_muscles", "")
 
-                # Parse equipment string back into list of dictionaries
-                equipment = []
-                if doc.metadata["equipment"]:
-                    equipment = [
-                        {"name": name}
-                        for name in doc.metadata["equipment"].split(", ")
-                        if name
+                    # Split strings into lists
+                    primary_muscles = [
+                        m.strip() for m in primary_muscles_str.split(",") if m.strip()
+                    ]
+                    secondary_muscles = [
+                        m.strip() for m in secondary_muscles_str.split(",") if m.strip()
                     ]
 
-                exercise = {
-                    "id": doc.metadata.get("id", ""),
-                    "name": doc.metadata.get("title", ""),
-                    "muscle_groups": muscle_groups,
-                    "equipment": equipment,
-                    "difficulty": doc.metadata.get("difficulty", "beginner"),
-                    "is_custom": doc.metadata.get("is_custom", False),
-                    "exercise_template_id": doc.metadata.get(
-                        "exercise_template_id", ""
-                    ),
-                    "similarity_score": score,
-                }
-                exercises.append(exercise)
+                    # Create muscle groups list with primary/secondary flags
+                    muscle_groups = []
+                    for muscle in primary_muscles:
+                        muscle_groups.append({"name": muscle, "is_primary": True})
+                    for muscle in secondary_muscles:
+                        muscle_groups.append({"name": muscle, "is_primary": False})
+
+                    # Parse equipment from metadata
+                    equipment_str = doc.metadata.get("equipment", "")
+                    equipment = [
+                        {"name": name.strip()} for name in equipment_str.split(",")
+                    ]
+
+                    exercise = {
+                        "id": doc.metadata.get("id"),
+                        "title": doc.metadata.get("title"),
+                        "description": doc.metadata.get("description"),
+                        "muscle_groups": muscle_groups,
+                        "equipment": equipment,
+                        "similarity_score": score,
+                    }
+                    exercises.append(exercise)
+
+                    logger.info(f"Found exercise: {exercise['title']} (score: {score})")
+                    logger.info(f"Muscle groups: {muscle_groups}")
+                    logger.info(f"Equipment: {equipment}")
+                except Exception as e:
+                    logger.error(f"Error processing result: {str(e)}")
+                    logger.error(f"Document metadata: {doc.metadata}")
 
             return exercises
-
         except Exception as e:
             logger.error(f"Error searching exercises: {str(e)}")
             return []
@@ -269,14 +409,29 @@ class ExerciseVectorStore:
             documents = []
             for metadata, doc in zip(results["metadatas"], results["documents"]):
                 # Convert string metadata back to lists
-                muscle_groups = (
-                    metadata["muscle_groups"].split(", ")
-                    if metadata["muscle_groups"]
+                primary_muscles = (
+                    metadata["primary_muscles"].split(", ")
+                    if metadata["primary_muscles"]
                     else []
                 )
-                equipment = (
-                    metadata["equipment"].split(", ") if metadata["equipment"] else []
+                secondary_muscles = (
+                    metadata["secondary_muscles"].split(", ")
+                    if metadata["secondary_muscles"]
+                    else []
                 )
+
+                # Create muscle groups list with primary/secondary flags
+                muscle_groups = []
+                for muscle in primary_muscles:
+                    muscle_groups.append({"name": muscle, "is_primary": True})
+                for muscle in secondary_muscles:
+                    muscle_groups.append({"name": muscle, "is_primary": False})
+
+                # Parse equipment from metadata
+                equipment_str = metadata.get("equipment", "")
+                equipment = [
+                    {"name": name.strip()} for name in equipment_str.split(",")
+                ]
 
                 # Create a new metadata dictionary with the correct structure
                 new_metadata = {
@@ -343,4 +498,155 @@ class ExerciseVectorStore:
             return unique_exercises[:limit]
         except Exception as e:
             logger.error(f"Error searching exercises by goal: {str(e)}")
+            return []
+
+    def add_workout_history(self, workouts: List[Dict]) -> None:
+        """
+        Add workout history to the vector store.
+
+        Args:
+            workouts (List[Dict]): List of workout dictionaries
+        """
+        try:
+            # Convert workouts to documents
+            documents = []
+            metadatas = []
+            ids = []
+
+            for workout in workouts:
+                # Skip if workout is missing required fields
+                if not workout.get("title") or not workout.get("exercises"):
+                    logger.warning(
+                        f"Skipping workout due to missing required fields: {workout}"
+                    )
+                    continue
+
+                # Get workout ID
+                workout_id = workout.get("id", str(uuid.uuid4()))
+
+                # Extract exercise information
+                exercises_info = []
+                for exercise in workout.get("exercises", []):
+                    exercise_title = exercise.get("title", "Unknown Exercise")
+                    exercise_notes = exercise.get("notes")
+                    sets_info = []
+                    for set_data in exercise.get("sets", []):
+                        weight = set_data.get("weight_kg", 0)
+                        reps = set_data.get("reps", 0)
+                        rpe = set_data.get("rpe")
+                        duration = set_data.get("duration_seconds")
+                        distance = set_data.get("distance_meters")
+                        custom_metric = set_data.get("custom_metric")
+
+                        # Build set info string based on exercise type
+                        if duration is not None:
+                            set_info = f"{duration}s"
+                        elif distance is not None:
+                            set_info = f"{distance}m"
+                        elif custom_metric is not None:
+                            # For exercises like stair machine that use custom_metric
+                            set_info = f"{custom_metric} {'floors' if 'stair' in exercise_title.lower() else 'steps'}"
+                        else:
+                            set_info = f"{weight}kg x {reps} reps"
+
+                        # Add RPE if present
+                        if rpe is not None:
+                            set_info += f" @ RPE {rpe}"
+
+                        sets_info.append(set_info)
+
+                    # Combine exercise info
+                    exercise_info = f"{exercise_title}: {' | '.join(sets_info)}"
+                    if exercise_notes:
+                        exercise_info += f" [Notes: {exercise_notes}]"
+                    exercises_info.append(exercise_info)
+
+                # Create document content
+                content = (
+                    f"Workout: {workout.get('title')} - "
+                    f"Date: {workout.get('start_time', 'Unknown')} - "
+                    f"Duration: {workout.get('duration_minutes', 'Unknown')} minutes - "
+                    f"Exercises: {' | '.join(exercises_info)}"
+                )
+
+                # Create metadata
+                metadata = {
+                    "id": str(workout_id),
+                    "title": str(workout.get("title")),
+                    "start_time": str(workout.get("start_time")),
+                    "end_time": str(workout.get("end_time")),
+                    "duration_minutes": str(workout.get("duration_minutes")),
+                    "exercise_count": len(workout.get("exercises", [])),
+                    "type": "workout_history",
+                    "user_id": str(workout.get("user_id")),
+                }
+
+                documents.append(content)
+                metadatas.append(metadata)
+                ids.append(str(workout_id))
+
+            # Add to vector store
+            self.vectorstore.add_texts(texts=documents, metadatas=metadatas, ids=ids)
+            # Persist the vector store to disk
+            self.vectorstore.persist()
+
+            logger.info(f"Added {len(workouts)} workouts to vector store")
+            if documents and metadatas:
+                logger.info("Sample of added workout:")
+                logger.info(f"Content: {documents[0]}")
+                logger.info(f"Metadata: {metadatas[0]}")
+        except Exception as e:
+            logger.error(f"Error adding workouts to vector store: {str(e)}")
+            raise
+
+    def search_workout_history(
+        self,
+        query: str,
+        user_id: str,
+        k: int = 5,
+    ) -> List[Dict]:
+        """
+        Search for similar workouts in the user's history.
+
+        Args:
+            query (str): Search query
+            user_id (str): User ID to filter workouts
+            k (int): Number of results to return
+
+        Returns:
+            List[Dict]: List of workout dictionaries
+        """
+        try:
+            # Perform similarity search with user filter
+            results = self.vectorstore.similarity_search_with_score(
+                query=query,
+                k=k,
+                filter={"$and": [{"user_id": user_id}, {"type": "workout_history"}]},
+            )
+
+            logger.info(f"Found {len(results)} similar workouts")
+
+            # Process results
+            workouts = []
+            for doc, score in results:
+                try:
+                    workout = {
+                        "id": doc.metadata.get("id"),
+                        "title": doc.metadata.get("title"),
+                        "start_time": doc.metadata.get("start_time"),
+                        "end_time": doc.metadata.get("end_time"),
+                        "duration_minutes": doc.metadata.get("duration_minutes"),
+                        "exercise_count": doc.metadata.get("exercise_count"),
+                        "similarity_score": score,
+                    }
+                    workouts.append(workout)
+
+                    logger.info(f"Found workout: {workout['title']} (score: {score})")
+                except Exception as e:
+                    logger.error(f"Error processing result: {str(e)}")
+                    logger.error(f"Document metadata: {doc.metadata}")
+
+            return workouts
+        except Exception as e:
+            logger.error(f"Error searching workout history: {str(e)}")
             return []

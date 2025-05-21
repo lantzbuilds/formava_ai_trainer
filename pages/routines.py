@@ -28,7 +28,7 @@ class ExerciseInRoutine(BaseModel):
     """Model for an exercise in a routine."""
 
     exercise_id: str
-    name: str
+    title: str
     sets: int
     reps: Optional[str] = None
     rpe: Optional[float] = None
@@ -134,7 +134,7 @@ def routines_page():
                             if "exercises" in day and day["exercises"]:
                                 for exercise in day["exercises"]:
                                     st.write(
-                                        f"- {exercise.get('name', 'Unknown Exercise')}"
+                                        f"- {exercise.get('title', 'Unknown Exercise')}"
                                     )
                                     if "sets" in exercise and "reps" in exercise:
                                         st.write(
@@ -165,7 +165,7 @@ def routines_page():
                     if "exercises" in routine and routine["exercises"]:
                         st.write("**Exercises:**")
                         for exercise in routine["exercises"]:
-                            st.write(f"- {exercise.get('name', 'Unknown Exercise')}")
+                            st.write(f"- {exercise.get('title', 'Unknown Exercise')}")
                             if "sets" in exercise and "reps" in exercise:
                                 st.write(
                                     f"  Sets: {exercise['sets']}, Reps: {exercise['reps']}"

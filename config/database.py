@@ -446,71 +446,46 @@ class Database:
             return None
 
     def get_user_workout_history(
-        self,
-        user_id: str,
-        start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None,
-    ):
-        """Get a user's workout history."""
+        self, user_id: str, start_date: datetime, end_date: datetime
+    ) -> List[Dict]:
+        """
+        Get workout history for a user within a date range.
+
+        Args:
+            user_id (str): User ID
+            start_date (datetime): Start date for the range
+            end_date (datetime): End date for the range
+
+        Returns:
+            List[Dict]: List of workout dictionaries
+        """
         try:
-            logger.info(f"Getting workout history for user {user_id}")
-
-            # If no date range is provided, use a very wide range to ensure we get all workouts
-            if not start_date or not end_date:
-                logger.info("No date range provided, using a very wide range")
-                # Use a range from 10 years ago to today
-                # Make sure to use UTC for consistency with the database
-                end_date = datetime.now(timezone.utc)
-                start_date = end_date - timedelta(days=365 * 10)
-
-            # Ensure dates have timezone information
-            if start_date and not start_date.tzinfo:
+            # Convert dates to UTC if they have timezone info
+            if start_date.tzinfo is None:
                 start_date = start_date.replace(tzinfo=timezone.utc)
-            if end_date and not end_date.tzinfo:
+            if end_date.tzinfo is None:
                 end_date = end_date.replace(tzinfo=timezone.utc)
 
+            logger.info(f"Getting workout history for user {user_id}")
             logger.info(f"Date range: {start_date} to {end_date}")
 
-            # Convert dates to ISO format for the query
-            start_date_str = start_date.isoformat()
-            end_date_str = end_date.isoformat()
-
-            # Get workouts for the user within the date range
-            # The by_user view emits [user_id, start_time] as the key
-            result = self.db.view(
+            # Query workouts within date range using the by_user view
+            results = self.db.view(
                 "workouts/by_user",
-                startkey=[user_id, start_date_str],
-                endkey=[user_id, end_date_str],
+                startkey=[user_id, start_date.isoformat()],
+                endkey=[user_id, end_date.isoformat()],
                 include_docs=True,
             )
 
-            # Extract workout documents
-            workouts = [row.doc for row in result]
+            # Convert to list and log count
+            workout_list = [row.doc for row in results]
             logger.info(
-                f"Found {len(workouts)} workouts for user {user_id} in date range {start_date_str} to {end_date_str}"
+                f"Found {len(workout_list)} workouts for user {user_id} in date range {start_date} to {end_date}"
             )
 
-            # Log details of each workout
-            for workout in workouts:
-                logger.info(f"Workout: {workout.get('title', 'Untitled')}")
-                logger.info(
-                    f"  start_time: {workout.get('start_time', 'No start time')}"
-                )
-                logger.info(f"  end_time: {workout.get('end_time', 'No end time')}")
-                logger.info(
-                    f"  created_at: {workout.get('created_at', 'No created_at')}"
-                )
-                logger.info(
-                    f"  updated_at: {workout.get('updated_at', 'No updated_at')}"
-                )
-
-            return workouts
+            return workout_list
         except Exception as e:
-            logger.error(f"Error getting user workout history: {str(e)}")
-            logger.error(f"Exception type: {type(e).__name__}")
-            import traceback
-
-            logger.error(f"Traceback: {traceback.format_exc()}")
+            logger.error(f"Error getting workout history: {str(e)}")
             return []
 
     def save_exercise(self, exercise_data: Dict[str, Any]) -> str:
@@ -584,7 +559,7 @@ class Database:
                 exercise = row.doc
                 has_embedding = "embedding" in exercise
                 logger.info(
-                    f"Retrieved exercise by Hevy ID {hevy_id}: {exercise.get('name', 'Unknown')} (Has embedding: {has_embedding})"
+                    f"Retrieved exercise by Hevy ID {hevy_id}: {exercise.get('title', 'Unknown')} (Has embedding: {has_embedding})"
                 )
                 return exercise
             logger.info(f"No exercise found with Hevy ID: {hevy_id}")
@@ -905,3 +880,34 @@ class Database:
         except Exception as e:
             logger.error(f"Error getting custom exercises: {str(e)}")
             return []
+
+    def recreate_exercises_design_document(self):
+        """Recreate the exercises design document to update views."""
+        try:
+            # Delete existing exercises design document if it exists
+            if "_design/exercises" in self.db:
+                logger.info("Deleting existing exercises design document")
+                doc = self.db["_design/exercises"]
+                self.db.delete(doc)
+
+            # Create new exercises design document
+            logger.info("Creating new exercises design document")
+            self.db.save(
+                {
+                    "_id": "_design/exercises",
+                    "views": {
+                        "by_hevy_id": {
+                            "map": "function(doc) { if (doc.type === 'exercise') { emit(doc.hevy_id, {id: doc._id, title: doc.title, muscle_groups: doc.muscle_groups, equipment: doc.equipment}); } }"
+                        },
+                        "by_muscle_group": {
+                            "map": "function(doc) { if (doc.type === 'exercise' && doc.muscle_groups) { doc.muscle_groups.forEach(function(mg) { emit(mg.name, {id: doc._id, title: doc.title, is_primary: mg.is_primary, equipment: doc.equipment}); }); } }"
+                        },
+                        "all": {
+                            "map": "function(doc) { if (doc.type === 'exercise') { emit(doc._id, {id: doc._id, title: doc.title, muscle_groups: doc.muscle_groups, equipment: doc.equipment}); } }"
+                        },
+                    },
+                }
+            )
+            logger.info("Exercises design document recreated successfully")
+        except Exception as e:
+            logger.error(f"Error recreating exercises design document: {str(e)}")

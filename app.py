@@ -141,7 +141,7 @@ def sidebar():
                 # Clear session state
                 for key in list(st.session_state.keys()):
                     del st.session_state[key]
-                st.experimental_rerun()
+                st.rerun()
         else:
             # Navigation options for non-logged-in users
             selected = st.radio(

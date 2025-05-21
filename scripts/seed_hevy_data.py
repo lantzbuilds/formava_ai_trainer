@@ -113,6 +113,7 @@ def create_sample_routine(hevy_api):
     # Create routine in Hevy with detailed error logging
     try:
         # Get the raw response from the API
+        # TODO: Move request to HevyAPI class
         url = f"{hevy_api.base_url}/routines"
         response = requests.post(url, headers=hevy_api.headers, json=routine_data)
 
