@@ -68,10 +68,21 @@ def profile_page():
         st.success("Hevy API key is configured")
         if st.button("Remove Hevy API Key"):
             try:
+                # Get the current document to preserve _rev
+                current_doc = db.get_document(st.session_state.user_id)
+                if not current_doc:
+                    raise Exception("User document not found")
+
                 # Update user document to remove API key
                 user.hevy_api_key = None
                 user.hevy_api_key_updated_at = None
-                db.save_document(user.model_dump(), doc_id=st.session_state.user_id)
+
+                # Create update document with _rev
+                update_doc = user.model_dump()
+                update_doc["_rev"] = current_doc["_rev"]
+
+                # Save the updated document
+                db.save_document(update_doc, doc_id=st.session_state.user_id)
                 st.success("Hevy API key removed successfully")
                 st.rerun()
             except Exception as e:
@@ -87,13 +98,22 @@ def profile_page():
             if st.form_submit_button("Save Hevy API Key"):
                 if hevy_api_key:
                     try:
+                        # Get the current document to preserve _rev
+                        current_doc = db.get_document(st.session_state.user_id)
+                        if not current_doc:
+                            raise Exception("User document not found")
+
                         # Encrypt and save API key
                         encrypted_key = encrypt_api_key(hevy_api_key)
                         user.hevy_api_key = encrypted_key
                         user.hevy_api_key_updated_at = datetime.now(timezone.utc)
-                        db.save_document(
-                            user.model_dump(), doc_id=st.session_state.user_id
-                        )
+
+                        # Create update document with _rev
+                        update_doc = user.model_dump()
+                        update_doc["_rev"] = current_doc["_rev"]
+
+                        # Save the updated document
+                        db.save_document(update_doc, doc_id=st.session_state.user_id)
                         st.success("Hevy API key saved successfully")
                         st.rerun()
                     except Exception as e:

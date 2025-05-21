@@ -87,8 +87,14 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 
+
 # Vector Store
 vectorstore/
 vector_store/
 *.faiss
 *.pkl 
+
+# Vector store embeddings cache
+data/vectorstore/embeddings_cache/
+data/vectorstore/**/*.bin
+

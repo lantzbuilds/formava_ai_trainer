@@ -1,0 +1,97 @@
+[
+    {
+      "title": "Investigate single set issue on Leg day",
+      "body": "Review AI-generated routines for undertraining patterns such as single sets on major muscle groups.",
+      "labels": ["MVP", "Stage 1"]
+    },
+    {
+      "title": "Ensure routines have correct number of sets",
+      "body": "Add validation rules to ensure a minimum/expected number of sets for generated routines.",
+      "labels": ["MVP", "Stage 1"]
+    },
+    {
+      "title": "Store weights in kg + convert to user pref",
+      "body": "Persist weights in kilograms but convert to imperial/metric in UI based on user profile preferences.",
+      "labels": ["MVP", "Stage 1"]
+    },
+    {
+      "title": "Add equipment availability to user model",
+      "body": "Update Register and UserProf models (and CouchDB views if necessary) to include available equipment.",
+      "labels": ["MVP", "Stage 1"]
+    },
+    {
+      "title": "Test routine saving in CouchDB",
+      "body": "Ensure that generated routines are correctly saved in CouchDB and retrievable per user.",
+      "labels": ["MVP", "Stage 1"]
+    },
+    {
+      "title": "Prepopulate folder name input",
+      "body": "Default the folder name field in the UI to reflect plan or date, but allow editing.",
+      "labels": ["Beta Polish", "Stage 2"]
+    },
+    {
+      "title": "Fix double date on folder title",
+      "body": "Resolve UI bug causing folder titles to show redundant date values.",
+      "labels": ["Beta Polish", "Stage 2"]
+    },
+    {
+      "title": "Add more split options to AI Recs page",
+      "body": "Provide additional workout split templates (e.g., push/pull/legs, upper/lower) for user selection.",
+      "labels": ["Beta Polish", "Stage 2"]
+    },
+    {
+      "title": "Handle failed Register validations",
+      "body": "Add user-friendly error handling for registration validation failures.",
+      "labels": ["Beta Polish", "Stage 2"]
+    },
+    {
+      "title": "Decide if sync_hevy page is necessary",
+      "body": "Determine whether to keep the sync_hevy page or move to automatic background data fetching.",
+      "labels": ["Beta Polish", "Stage 2"]
+    },
+    {
+      "title": "Implement CI/CD flow",
+      "body": "Set up a continuous integration and deployment pipeline, preferably via GitHub Actions.",
+      "labels": ["Beta Infra", "Stage 2"]
+    },
+    {
+      "title": "Add LangSmith for RAG observability",
+      "body": "Integrate LangSmith to track and evaluate RAG pipeline performance, relevance, and latency.",
+      "labels": ["AI Observability", "Stage 2"]
+    },
+    {
+      "title": "Add agentic reflection scoring to RAG",
+      "body": "Add logic for GPT self-evaluation (relevance, groundedness, correctness) to improve generation quality.",
+      "labels": ["AI Observability", "Stage 2"]
+    },
+    {
+      "title": "Build out Next.js frontend",
+      "body": "Create a React-based frontend using Next.js for improved structure, styling, and deployability.",
+      "labels": ["Frontend", "Stage 3"]
+    },
+    {
+      "title": "Migrate UI from Streamlit to React",
+      "body": "Move from Streamlit MVP to a production-grade React/Next.js interface.",
+      "labels": ["Frontend", "Stage 3"]
+    },
+    {
+      "title": "Redeploy and expand beta tester group",
+      "body": "Deploy the Next.js version and onboard a wider beta group for feedback.",
+      "labels": ["Frontend", "Stage 3"]
+    },
+    {
+      "title": "Strategize monetization model",
+      "body": "Evaluate options: donations, freemium, or premium features. Identify what's monetizable.",
+      "labels": ["Monetization", "Stage 4"]
+    },
+    {
+      "title": "Implement premium feature fencing",
+      "body": "Set up Stripe token or another method to restrict access to premium features.",
+      "labels": ["Monetization", "Stage 4"]
+    },
+    {
+      "title": "Evaluate different models for response quality",
+      "body": "Test GPT-4, Claude, and others for RAG response quality to optimize the user experience.",
+      "labels": ["Monetization", "Stage 4"]
+    }
+  ]
