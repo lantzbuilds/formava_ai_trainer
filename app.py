@@ -11,6 +11,7 @@ import plotly.express as px
 import streamlit as st
 from dotenv import load_dotenv
 
+from bootstrap_vectorstore import bootstrap_vectorstore
 from config.database import Database
 from models.user import FitnessGoal, Injury, InjurySeverity, Sex, UserProfile
 from pages.ai_recommendations import ai_recommendations_page
@@ -182,6 +183,9 @@ def main():
     """
     Main application function.
     """
+    if os.getenv("ENV") == "production":
+        bootstrap_vectorstore()
+
     # Render the sidebar
     sidebar()
 
