@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 import streamlit as st
 
+from config.config import HEVY_API_KEY
 from config.database import Database
 from models.user import FitnessGoal, InjurySeverity, Sex, UserProfile
 from utils.crypto import encrypt_api_key
@@ -86,15 +87,23 @@ def register_page():
             type="password",
             help="You can add this later in your profile",
         )
+
+        # Handle API key encryption
         encrypted_key = None
-        if (
-            hevy_api_key and hevy_api_key.strip()
-        ):  # Only encrypt if key is provided and not empty
+        if hevy_api_key and hevy_api_key.strip():
             try:
                 encrypted_key = encrypt_api_key(hevy_api_key)
             except Exception as e:
                 st.error(f"Error encrypting Hevy API key: {str(e)}")
-                return  # Stop form submission if encryption fails
+                return
+        elif HEVY_API_KEY:  # Use demo key if no user key provided
+            try:
+                encrypted_key = encrypt_api_key(HEVY_API_KEY)
+                st.info(
+                    "Using demo Hevy API key. You can update this later in your profile."
+                )
+            except Exception as e:
+                logger.error(f"Error encrypting demo Hevy API key: {str(e)}")
 
         submit = st.form_submit_button("Register")
 
@@ -204,7 +213,7 @@ def register_page():
                     experience_level=experience,
                     preferred_workout_days=preferred_workout_days,
                     preferred_workout_duration=preferred_workout_duration,
-                    hevy_api_key=encrypted_key if hevy_api_key else None,
+                    hevy_api_key=encrypted_key,  # Will be None if no keys available
                     injuries=st.session_state.injuries,
                 )
 
@@ -213,16 +222,13 @@ def register_page():
 
                 # Save to database
                 logger.info("Saving user to database...")
-                # Ensure all datetime objects are serialized
                 user_dict = new_user.model_dump()
                 doc_id, doc_rev = db.save_document(user_dict)
                 logger.info(f"User saved successfully. ID: {doc_id}, Rev: {doc_rev}")
 
                 st.success(f"Registration successful! Welcome, {username}!")
-                # Store the document ID, not the user ID
                 st.session_state.user_id = doc_id
                 st.session_state.username = username
-                # Clear injuries from session state
                 st.session_state.injuries = []
                 st.rerun()
             except Exception as e:
