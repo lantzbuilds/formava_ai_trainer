@@ -30,6 +30,10 @@ The application is built using Python and consists of several key components:
 - `config/database.py`: Database connection and operations
 - `pages/`: Contains different application pages (workout history, AI recommendations)
 
+## Public deploy link
+
+You can try out the current iteration of the app [at this Render link](https://hevy-ai-trainer.onrender.com/).
+
 ## Setup
 
 1. **Clone the repository**
