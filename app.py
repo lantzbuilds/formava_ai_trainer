@@ -6,23 +6,18 @@ import logging
 import os
 from datetime import datetime, timedelta, timezone
 
+import gradio as gr
 import pandas as pd
-import plotly.express as px
-import streamlit as st
 from dotenv import load_dotenv
 
 from bootstrap_vectorstore import bootstrap_vectorstore
 from config.database import Database
 from models.user import FitnessGoal, Injury, InjurySeverity, Sex, UserProfile
-from page_components.ai_recommendations import ai_recommendations_page
-from page_components.dashboard import dashboard_page
-from page_components.login import login_page
-from page_components.profile import profile_page
-from page_components.register import register_page
-from page_components.routines import routines_page
-from page_components.sync_hevy import sync_hevy_page
-from page_components.workout_history import workout_history_page
-from page_components.workout_preferences import workout_preferences_page
+from pages.ai_recs import ai_recs_view
+from pages.dashboard import dashboard_view
+from pages.login import login_view
+from pages.profile import profile_view
+from pages.register import register_view
 from services.hevy_api import HevyAPI
 from services.openai_service import OpenAIService
 from utils.crypto import decrypt_api_key, encrypt_api_key
@@ -45,153 +40,190 @@ load_dotenv()
 # Initialize database connection
 db = Database()
 
-# Configure Streamlit page
-st.set_page_config(
-    page_title="AI Personal Trainer",
-    page_icon="💪",
-    layout="wide",
-    initial_sidebar_state="expanded",
-    menu_items=None,
-)
-st.set_option("client.showSidebarNavigation", False)
-
-# Initialize session state for user authentication
-if "user_id" not in st.session_state:
-    st.session_state.user_id = None
-if "username" not in st.session_state:
-    st.session_state.username = None
-if "page" not in st.session_state:
-    st.session_state.page = "dashboard"
+# Bootstrap vectorstore if in production
+if os.getenv("ENV") == "production":
+    logger.info("Bootstrapping vectorstore for production environment")
+    bootstrap_vectorstore()
 
 
-# Add a function to clear all caches
-def clear_all_caches():
-    """Clear all Streamlit caches."""
-    st.cache_data.clear()
-    st.cache_resource.clear()
-    logger.info("Cleared all Streamlit caches")
-
-
-def sidebar():
+def app():
+    # Custom CSS for better styling and responsiveness
+    custom_css = """
+    /* Base styles */
+    .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 1rem;
+    }
+    
+    /* Navigation styles */
+    .nav-bar {
+        background-color: #f0f0f0;
+        padding: 1rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    
+    .nav-button {
+        flex: 1;
+        min-width: 120px;
+        margin: 0.25rem;
+        white-space: nowrap;
+        text-align: center;
+    }
+    
+    /* Page container styles */
+    .page-container {
+        padding: 1rem;
+        border-radius: 8px;
+        background-color: white;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        width: 100%;
+        box-sizing: border-box;
+    }
+    
+    /* Form styles */
+    .form-group {
+        margin-bottom: 1rem;
+        width: 100%;
+    }
+    
+    .form-input {
+        width: 100%;
+        box-sizing: border-box;
+    }
+    
+    /* Responsive grid */
+    .grid-container {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 1rem;
+        width: 100%;
+    }
+    
+    /* Mobile optimizations */
+    @media (max-width: 768px) {
+        .container {
+            padding: 0.5rem;
+        }
+        
+        .nav-bar {
+            padding: 0.5rem;
+        }
+        
+        .nav-button {
+            min-width: 100px;
+            font-size: 0.9rem;
+            padding: 0.5rem;
+        }
+        
+        .page-container {
+            padding: 0.75rem;
+        }
+        
+        .grid-container {
+            grid-template-columns: 1fr;
+        }
+    }
+    
+    /* Dark mode support */
+    @media (prefers-color-scheme: dark) {
+        .nav-bar {
+            background-color: #2d2d2d;
+        }
+        
+        .page-container {
+            background-color: #1e1e1e;
+            color: #ffffff;
+        }
+    }
     """
-    Render the sidebar navigation.
-    """
-    # Hide the default Streamlit navigation
-    # hide_streamlit_style = """
-    #     <style>
-    #     #MainMenu {display: none !important;}
-    #     footer {display: none !important;}
-    #     header {display: none !important;}
-    #     .stDeployButton {display: none !important;}
-    #     .stApp > header {display: none !important;}
-    #     .stApp > footer {display: none !important;}
-    #     .stApp > div[data-testid="stSidebar"] > div:first-child {display: none !important;}
-    #     .stApp > div[data-testid="stSidebar"] > div:nth-child(2) {display: none !important;}
-    #     .stApp > div[data-testid="stSidebar"] > div:nth-child(3) {display: none !important;}
-    #     .stApp > div[data-testid="stSidebar"] > div:nth-child(4) {display: none !important;}
-    #     .stApp > div[data-testid="stSidebar"] > div:nth-child(5) {display: none !important;}
-    #     .stApp > div[data-testid="stSidebar"] > div:nth-child(6) {display: none !important;}
-    #     .stApp > div[data-testid="stSidebar"] > div:nth-child(7) {display: none !important;}
-    #     .stApp > div[data-testid="stSidebar"] > div:nth-child(8) {display: none !important;}
-    #     .stApp > div[data-testid="stSidebar"] > div:nth-child(9) {display: none !important;}
-    #     .stApp > div[data-testid="stSidebar"] > div:nth-child(10) {display: none !important;}
-    #     ul[data-testid="stSidebarNavItems"] {display: none !important;}
-    #     </style>
-    # """
-    # st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
-    with st.sidebar:
-        st.title("AI Personal Trainer")
+    with gr.Blocks(theme=gr.themes.Soft(), css=custom_css) as app:
+        current_page = gr.State("login")
+        user_state = gr.State(None)  # Store user session data
 
-        # Add a button to clear caches
-        if st.button("Clear Caches"):
-            clear_all_caches()
-            st.success("Caches cleared!")
-            st.rerun()
-
-        # Check if user is logged in
-        if "user_id" in st.session_state and st.session_state.user_id:
-            # Navigation options for logged-in users
-            selected = st.radio(
-                "Navigation",
-                [
-                    "Dashboard",
-                    "Workout History",
-                    "AI Recommendations",
-                    "Routines",
-                    "Sync Hevy",
-                    "Profile",
-                    "Logout",
-                ],
+        def update_visibility(page):
+            return (
+                gr.update(visible=page == "register"),
+                gr.update(visible=page == "login"),
+                gr.update(visible=page == "dashboard"),
+                gr.update(visible=page == "ai_recs"),
+                gr.update(visible=page == "profile"),
+                page,
             )
 
-            # Set the selected page in session state
-            if selected == "Dashboard":
-                st.session_state.page = "dashboard"
-            elif selected == "Workout History":
-                st.session_state.page = "workout_history"
-            elif selected == "AI Recommendations":
-                st.session_state.page = "ai_recommendations"
-            elif selected == "Routines":
-                st.session_state.page = "routines"
-            elif selected == "Sync Hevy":
-                st.session_state.page = "sync_hevy"
-            elif selected == "Profile":
-                st.session_state.page = "profile"
-            elif selected == "Logout":
-                # Clear session state
-                for key in list(st.session_state.keys()):
-                    del st.session_state[key]
-                st.rerun()
-        else:
-            # Navigation options for non-logged-in users
-            selected = st.radio(
-                "Navigation",
-                ["Login", "Register"],
-            )
+        # Main container for better responsiveness
+        with gr.Column(elem_classes="container"):
+            # Navigation Bar
+            with gr.Row(elem_classes="nav-bar"):
+                with gr.Column(scale=1, min_width=120):
+                    register_btn = gr.Button(
+                        "Register", variant="primary", elem_classes="nav-button"
+                    )
+                with gr.Column(scale=1, min_width=120):
+                    login_btn = gr.Button(
+                        "Login", variant="primary", elem_classes="nav-button"
+                    )
+                with gr.Column(scale=1, min_width=120):
+                    dashboard_btn = gr.Button(
+                        "Dashboard", variant="primary", elem_classes="nav-button"
+                    )
+                with gr.Column(scale=1, min_width=120):
+                    ai_recs_btn = gr.Button(
+                        "AI Recs", variant="primary", elem_classes="nav-button"
+                    )
+                with gr.Column(scale=1, min_width=120):
+                    profile_btn = gr.Button(
+                        "Profile", variant="primary", elem_classes="nav-button"
+                    )
 
-            # Set the selected page in session state
-            if selected == "Login":
-                st.session_state.page = "login"
-            elif selected == "Register":
-                st.session_state.page = "register"
+            # Connect navigation buttons
+            for btn, page in [
+                (register_btn, "register"),
+                (login_btn, "login"),
+                (dashboard_btn, "dashboard"),
+                (ai_recs_btn, "ai_recs"),
+                (profile_btn, "profile"),
+            ]:
+                btn.click(
+                    fn=update_visibility,
+                    inputs=[],
+                    outputs=[
+                        "register_block",
+                        "login_block",
+                        "dashboard_block",
+                        "ai_recs_block",
+                        "profile_block",
+                        current_page,
+                    ],
+                    _js=f"() => '{page}'",
+                )
 
+            # Main Content Area
+            with gr.Column(elem_classes="page-container"):
+                with gr.Group(visible=False) as register_block:
+                    register_view()
+                with gr.Group(visible=False) as login_block:
+                    login_view()
+                with gr.Group(visible=False) as dashboard_block:
+                    dashboard_view()
+                with gr.Group(visible=False) as ai_recs_block:
+                    ai_recs_view()
+                with gr.Group(visible=False) as profile_block:
+                    profile_view()
 
-def render_page():
-    """
-    Render the selected page based on session state.
-    """
-    if st.session_state.page == "dashboard":
-        dashboard_page()
-    elif st.session_state.page == "workout_history":
-        workout_history_page()
-    elif st.session_state.page == "ai_recommendations":
-        ai_recommendations_page()
-    elif st.session_state.page == "routines":
-        routines_page()
-    elif st.session_state.page == "sync_hevy":
-        sync_hevy_page()
-    elif st.session_state.page == "profile":
-        profile_page()
-    elif st.session_state.page == "login":
-        login_page()
-    elif st.session_state.page == "register":
-        register_page()
-
-
-def main():
-    """
-    Main application function.
-    """
-    if os.getenv("ENV") == "production":
-        bootstrap_vectorstore()
-
-    # Render the sidebar
-    sidebar()
-
-    # Render the selected page
-    render_page()
+    app.launch(
+        server_name="0.0.0.0",
+        server_port=8080,
+        share=True,
+        show_error=True,
+        show_api=False,
+    )
 
 
 if __name__ == "__main__":
-    main()
+    app()
