@@ -1,7 +1,18 @@
+import logging
+from datetime import datetime, timezone
+
 import gradio as gr
 
 from config.database import Database
+from models.user import FitnessGoal, InjurySeverity, Sex, UserProfile
+from utils.crypto import encrypt_api_key
+from utils.units import inches_to_cm, lbs_to_kg
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Initialize database connection
 db = Database()
 
 
@@ -10,7 +21,10 @@ def register_view():
         gr.Markdown("## Register")
 
         with gr.Row():
+            username = gr.Textbox(label="Username", placeholder="Choose a username")
             email = gr.Textbox(label="Email", placeholder="Enter your email")
+
+        with gr.Row():
             password = gr.Textbox(
                 label="Password", placeholder="Enter your password", type="password"
             )
@@ -21,27 +35,151 @@ def register_view():
             )
 
         with gr.Row():
-            name = gr.Textbox(label="Name", placeholder="Enter your name")
+            with gr.Column():
+                # Height in feet and inches
+                height_feet = gr.Number(
+                    label="Height (feet)", minimum=3, maximum=8, value=5
+                )
+                height_inches = gr.Number(
+                    label="Height (inches)", minimum=0, maximum=11, value=10
+                )
+                # Weight in pounds
+                weight_lbs = gr.Number(
+                    label="Weight (lbs)", minimum=50, maximum=500, value=150
+                )
+                sex = gr.Dropdown(label="Sex", choices=[s.value for s in Sex])
+
+            with gr.Column():
+                age = gr.Number(label="Age", minimum=13, maximum=120, value=30)
+                experience = gr.Dropdown(
+                    label="Experience Level",
+                    choices=["beginner", "intermediate", "advanced"],
+                )
+                goals = gr.CheckboxGroup(
+                    label="Fitness Goals", choices=[g.value for g in FitnessGoal]
+                )
+
+        with gr.Row():
+            preferred_workout_days = gr.Slider(
+                label="Days per week you plan to work out",
+                minimum=1,
+                maximum=7,
+                value=3,
+                step=1,
+            )
+            preferred_workout_duration = gr.Slider(
+                label="Preferred workout duration (minutes)",
+                minimum=15,
+                maximum=180,
+                value=60,
+                step=15,
+            )
+
+        # Hevy API Integration
+        gr.Markdown("### Hevy API Integration (Optional)")
+        hevy_api_key = gr.Textbox(
+            label="Hevy API Key",
+            placeholder="You can add this later in your profile",
+            type="password",
+        )
 
         with gr.Row():
             register_button = gr.Button("Register", variant="primary")
             error_message = gr.Markdown(visible=False)
 
-        def handle_register(email, password, confirm_password, name):
+        def handle_register(
+            username,
+            email,
+            password,
+            confirm_password,
+            height_feet,
+            height_inches,
+            weight_lbs,
+            sex,
+            age,
+            experience,
+            goals,
+            preferred_workout_days,
+            preferred_workout_duration,
+            hevy_api_key,
+        ):
             try:
                 if password != confirm_password:
                     return None, gr.update(value="Passwords do not match", visible=True)
 
-                # TODO: Implement actual registration logic
-                # For now, just return a mock user
-                user = {"email": email, "name": name}
+                # Check if username already exists
+                if db.username_exists(username):
+                    return None, gr.update(
+                        value="Username already exists. Please choose a different username.",
+                        visible=True,
+                    )
+
+                # Convert height to cm
+                height_cm = inches_to_cm(height_feet * 12 + height_inches)
+                # Convert weight to kg
+                weight_kg = lbs_to_kg(weight_lbs)
+
+                # Handle API key encryption
+                encrypted_key = None
+                if hevy_api_key and hevy_api_key.strip():
+                    try:
+                        encrypted_key = encrypt_api_key(hevy_api_key)
+                    except Exception as e:
+                        return None, gr.update(
+                            value=f"Error encrypting Hevy API key: {str(e)}",
+                            visible=True,
+                        )
+
+                # Create new user
+                new_user = UserProfile.create_user(
+                    username=username,
+                    email=email,
+                    password=password,
+                    height_cm=height_cm,
+                    weight_kg=weight_kg,
+                    sex=Sex(sex),
+                    age=age,
+                    fitness_goals=[FitnessGoal(g) for g in goals],
+                    experience_level=experience,
+                    preferred_workout_days=preferred_workout_days,
+                    preferred_workout_duration=preferred_workout_duration,
+                    hevy_api_key=encrypted_key,
+                    injuries=[],  # We'll add injury management in a separate step
+                )
+
+                # Save to database
+                user_dict = new_user.model_dump()
+                doc_id, doc_rev = db.save_document(user_dict)
+
+                # Return user object for state management
+                user = {"id": doc_id, "username": username, "email": email}
+
                 return user, gr.update(visible=False)
+
             except Exception as e:
-                return None, gr.update(value=f"Error: {str(e)}", visible=True)
+                logger.error(f"Registration failed: {str(e)}", exc_info=True)
+                return None, gr.update(
+                    value=f"Registration failed: {str(e)}", visible=True
+                )
 
         register_button.click(
             fn=handle_register,
-            inputs=[email, password, confirm_password, name],
+            inputs=[
+                username,
+                email,
+                password,
+                confirm_password,
+                height_feet,
+                height_inches,
+                weight_lbs,
+                sex,
+                age,
+                experience,
+                goals,
+                preferred_workout_days,
+                preferred_workout_duration,
+                hevy_api_key,
+            ],
             outputs=[gr.State(), error_message],
         )
 
