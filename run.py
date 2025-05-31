@@ -39,17 +39,44 @@ def run_gradio(args: List[str] = None):
 def check_couchdb_running():
     """Check if CouchDB container is running using docker-compose."""
     try:
+        # First check if container exists and is running
         result = subprocess.run(
             ["docker-compose", "ps", "couchdb"],
             capture_output=True,
             text=True,
             timeout=5,
         )
-        return "up" in result.stdout and "healthy" in result.stdout
+
+        # Check if container exists and is running
+        if "couchdb" not in result.stdout:
+            print("CouchDB container not found")
+            return False
+
+        # Check if container is healthy
+        health_result = subprocess.run(
+            [
+                "docker",
+                "inspect",
+                "-f",
+                "{{.State.Health.Status}}",
+                "formava_ai_trainer_couchdb",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+
+        is_healthy = health_result.stdout.strip() == "healthy"
+        if not is_healthy:
+            print(f"CouchDB health status: {health_result.stdout.strip()}")
+
+        return is_healthy
+
     except subprocess.TimeoutExpired:
         print("Timeout checking CouchDB container status")
         return False
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as e:
+        print(f"Error checking CouchDB status: {e}")
         return False
 
 
@@ -133,18 +160,22 @@ def stop_couchdb():
 
 def wait_for_couchdb(max_retries=30, retry_interval=2):
     """Wait for CouchDB to be ready and healthy."""
+    print("Waiting for CouchDB to be ready...")
     for i in range(max_retries):
         if check_couchdb_running():
-            print("CouchDB is ready!")
+            print("CouchDB is ready and healthy!")
             return True
 
         # If we're past the first few attempts, show more debug info
         if i > 2:
+            print(f"\nAttempt {i+1}/{max_retries} - Checking container status...")
             inspect_container()
             check_container_logs()
 
         print(f"Waiting for CouchDB to be ready... (attempt {i+1}/{max_retries})")
         time.sleep(retry_interval)
+
+    print("\nCouchDB failed to become healthy within the timeout period")
     return False
 
 
