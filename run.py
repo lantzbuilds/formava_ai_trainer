@@ -19,14 +19,14 @@ def is_port_in_use(port: int) -> bool:
 
 
 def run_gradio(args: List[str] = None):
-    """Run Gradio application."""
+    """Run Gradio application with hot-reloading."""
     if args is None:
         args = []
 
-    # Base command for running the app
+    # Base command for running the dev server
     cmd = [
         "python",
-        "app.py",
+        "dev_server.py",
     ]
 
     # Add any additional arguments
