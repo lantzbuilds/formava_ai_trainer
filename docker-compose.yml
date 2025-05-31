@@ -8,11 +8,15 @@ services:
       - "${COUCHDB_PORT:-5984}:5984"
     environment:
       - COUCHDB_USER=${COUCHDB_USER:-ai_trainer_admin}
-      - COUCHDB_PASSWORD=${COUCHDB_PASSWORD:-dev_password}
+      - COUCHDB_PASSWORD=${COUCHDB_PASSWORD:-dev_KTq29pZuEi1VsoNqf2mJMPTg}
+      - COUCHDB_CREATE_SYSTEM_DATABASES=true
+      - COUCHDB_CREATE_SYSTEM_ACCOUNTS=true
+      - COUCHDB_SYSTEM_ADMIN_USER=${COUCHDB_USER:-ai_trainer_admin}
+      - COUCHDB_SYSTEM_ADMIN_PASSWORD=${COUCHDB_PASSWORD:-dev_KTq29pZuEi1VsoNqf2mJMPTg}
     volumes:
       - couchdb_data:/opt/couchdb/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://${COUCHDB_USER:-ai_trainer_admin}:${COUCHDB_PASSWORD:-dev_password}@localhost:5984/"]
+      test: ["CMD", "curl", "-f", "http://${COUCHDB_USER:-ai_trainer_admin}:${COUCHDB_PASSWORD:-dev_KTq29pZuEi1VsoNqf2mJMPTg}@localhost:5984/"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -26,4 +30,4 @@ services:
 
 volumes:
   couchdb_data:
-    name: formava_ai_trainer_couchdb_data 
+    name: formada_ai_trainer_couchdb_data 

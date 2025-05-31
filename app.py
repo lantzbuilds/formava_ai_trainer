@@ -156,6 +156,57 @@ def app():
                 page,
             )
 
+        def update_nav_visibility(user):
+            """Update navigation visibility based on user state."""
+            if user is None:
+                # Not logged in - show only register and login
+                return (
+                    gr.update(visible=True),  # register
+                    gr.update(visible=True),  # login
+                    gr.update(visible=False),  # dashboard
+                    gr.update(visible=False),  # ai_recs
+                    gr.update(visible=False),  # profile
+                    gr.update(visible=False),  # logout
+                )
+            else:
+                # Logged in - show all except register and login
+                return (
+                    gr.update(visible=False),  # register
+                    gr.update(visible=False),  # login
+                    gr.update(visible=True),  # dashboard
+                    gr.update(visible=True),  # ai_recs
+                    gr.update(visible=True),  # profile
+                    gr.update(visible=True),  # logout
+                )
+
+        def handle_login(user, error_msg):
+            """Handle successful login."""
+            if user is None:
+                return None, *update_nav_visibility(None), "login"
+            return (
+                user,  # Update user state
+                *update_nav_visibility(user),  # Update nav visibility
+                "dashboard",  # Redirect to dashboard
+            )
+
+        def handle_register(user, error_msg):
+            """Handle successful registration."""
+            if user is None:
+                return None, *update_nav_visibility(None), "register"
+            return (
+                user,  # Update user state
+                *update_nav_visibility(user),  # Update nav visibility
+                "dashboard",  # Redirect to dashboard
+            )
+
+        def handle_logout():
+            """Handle user logout."""
+            return (
+                None,  # Clear user state
+                *update_nav_visibility(None),  # Update nav visibility
+                "login",  # Redirect to login
+            )
+
         # Main container for better responsiveness
         with gr.Column(elem_classes="container"):
             # Navigation Bar
@@ -180,41 +231,143 @@ def app():
                     profile_btn = gr.Button(
                         "Profile", variant="primary", elem_classes="nav-button"
                     )
-
-            # Connect navigation buttons
-            for btn, page in [
-                (register_btn, "register"),
-                (login_btn, "login"),
-                (dashboard_btn, "dashboard"),
-                (ai_recs_btn, "ai_recs"),
-                (profile_btn, "profile"),
-            ]:
-                btn.click(
-                    fn=update_visibility,
-                    inputs=[],
-                    outputs=[
-                        "register_block",
-                        "login_block",
-                        "dashboard_block",
-                        "ai_recs_block",
-                        "profile_block",
-                        current_page,
-                    ],
-                    _js=f"() => '{page}'",
-                )
+                with gr.Column(scale=1, min_width=120):
+                    logout_btn = gr.Button(
+                        "Logout", variant="secondary", elem_classes="nav-button"
+                    )
 
             # Main Content Area
             with gr.Column(elem_classes="page-container"):
                 with gr.Group(visible=False) as register_block:
-                    register_view()
+                    register_button, register_error = register_view()
                 with gr.Group(visible=False) as login_block:
-                    login_view()
+                    login_button, login_error = login_view()
                 with gr.Group(visible=False) as dashboard_block:
                     dashboard_view()
                 with gr.Group(visible=False) as ai_recs_block:
                     ai_recs_view()
                 with gr.Group(visible=False) as profile_block:
                     profile_view()
+
+            # Connect navigation buttons
+            register_btn.click(
+                fn=lambda: update_visibility("register"),
+                inputs=[],
+                outputs=[
+                    register_block,
+                    login_block,
+                    dashboard_block,
+                    ai_recs_block,
+                    profile_block,
+                    current_page,
+                ],
+            )
+            login_btn.click(
+                fn=lambda: update_visibility("login"),
+                inputs=[],
+                outputs=[
+                    register_block,
+                    login_block,
+                    dashboard_block,
+                    ai_recs_block,
+                    profile_block,
+                    current_page,
+                ],
+            )
+            dashboard_btn.click(
+                fn=lambda: update_visibility("dashboard"),
+                inputs=[],
+                outputs=[
+                    register_block,
+                    login_block,
+                    dashboard_block,
+                    ai_recs_block,
+                    profile_block,
+                    current_page,
+                ],
+            )
+            ai_recs_btn.click(
+                fn=lambda: update_visibility("ai_recs"),
+                inputs=[],
+                outputs=[
+                    register_block,
+                    login_block,
+                    dashboard_block,
+                    ai_recs_block,
+                    profile_block,
+                    current_page,
+                ],
+            )
+            profile_btn.click(
+                fn=lambda: update_visibility("profile"),
+                inputs=[],
+                outputs=[
+                    register_block,
+                    login_block,
+                    dashboard_block,
+                    ai_recs_block,
+                    profile_block,
+                    current_page,
+                ],
+            )
+            logout_btn.click(
+                fn=handle_logout,
+                inputs=[],
+                outputs=[
+                    user_state,
+                    register_btn,
+                    login_btn,
+                    dashboard_btn,
+                    ai_recs_btn,
+                    profile_btn,
+                    logout_btn,
+                    current_page,
+                ],
+            )
+
+            # Connect login and register handlers
+            login_button.click(
+                fn=handle_login,
+                inputs=[login_button, login_error],
+                outputs=[
+                    user_state,
+                    register_btn,
+                    login_btn,
+                    dashboard_btn,
+                    ai_recs_btn,
+                    profile_btn,
+                    logout_btn,
+                    current_page,
+                ],
+            )
+            register_button.click(
+                fn=handle_register,
+                inputs=[register_button, register_error],
+                outputs=[
+                    user_state,
+                    register_btn,
+                    login_btn,
+                    dashboard_btn,
+                    ai_recs_btn,
+                    profile_btn,
+                    logout_btn,
+                    current_page,
+                ],
+            )
+
+            # Initial nav visibility update
+            app.load(
+                fn=lambda: update_nav_visibility(None),
+                inputs=[],
+                outputs=[
+                    register_btn,
+                    login_btn,
+                    dashboard_btn,
+                    ai_recs_btn,
+                    profile_btn,
+                    logout_btn,
+                ],
+            )
 
     app.launch(
         server_name="0.0.0.0",
