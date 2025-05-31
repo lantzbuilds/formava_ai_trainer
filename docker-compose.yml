@@ -1,19 +1,29 @@
+name: formava_ai_trainer
 
 services:
   couchdb:
+    container_name: formava_ai_trainer_couchdb
     image: couchdb:3.3.2
     ports:
-      - "5984:5984"
+      - "${COUCHDB_PORT:-5984}:5984"
     environment:
-      - COUCHDB_USER=ai_trainer_admin
-      - COUCHDB_PASSWORD=KTq29pZuEi1VsoNqf2mJMPTg
+      - COUCHDB_USER=${COUCHDB_USER:-ai_trainer_admin}
+      - COUCHDB_PASSWORD=${COUCHDB_PASSWORD:-dev_password}
     volumes:
       - couchdb_data:/opt/couchdb/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5984"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      test: ["CMD", "curl", "-f", "http://${COUCHDB_USER:-ai_trainer_admin}:${COUCHDB_PASSWORD:-dev_password}@localhost:5984/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
-  couchdb_data: 
+  couchdb_data:
+    name: formava_ai_trainer_couchdb_data 
