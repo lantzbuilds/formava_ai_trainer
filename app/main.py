@@ -37,6 +37,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+favicon_path = os.path.abspath("app/static/images/favicon.ico")
+
 # Load environment variables
 load_dotenv()
 
@@ -59,8 +61,8 @@ def create_app():
         # Create Gradio app
         demo = gr.Blocks(
             title="Formava AI Fitness",
-            theme=setup_theme(),
-            css="app/static/css/style.css",
+            theme="soft",
+            css_paths=["app/static/css/style.css"],
         )
 
         # Setup application state
@@ -78,16 +80,18 @@ def create_app():
         raise
 
 
+demo = create_app()
+
+
 def main():
     """Main entry point for the application."""
     try:
-        demo = create_app()
         demo.launch(
             server_name="0.0.0.0",
             server_port=7860,
             share=True,
             debug=True,
-            favicon_path="app/static/images/favicon.ico",
+            favicon_path=favicon_path,
         )
     except Exception as e:
         logger.error(f"Application failed to start: {str(e)}", exc_info=True)
