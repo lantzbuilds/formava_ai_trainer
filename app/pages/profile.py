@@ -92,9 +92,26 @@ def profile_view(state):
                 save_hevy_key = gr.Button("Save Hevy API Key")
 
         # Injuries Section
-        with gr.Group():
+        with gr.Group() as injuries_container:
             gr.Markdown("### Injuries")
+
+            # Current Injuries Display
             injuries_list = gr.Markdown("Loading injuries...")
+
+            # Injury Actions
+            with gr.Row():
+                with gr.Column(scale=1):
+                    injury_index = gr.Number(
+                        label="Injury Number", interactive=True, minimum=1, step=1
+                    )
+                with gr.Column(scale=2):
+                    with gr.Row():
+                        toggle_active_btn = gr.Button(
+                            "Toggle Active Status", variant="secondary"
+                        )
+                        delete_injury_btn = gr.Button("Delete Injury", variant="stop")
+
+            # Add New Injury Form
             with gr.Group():
                 gr.Markdown("#### Add New Injury")
                 with gr.Row():
@@ -122,7 +139,7 @@ def profile_view(state):
                         label="Notes",
                         placeholder="Additional details about the injury",
                     )
-                add_injury_btn = gr.Button("Add Injury")
+                add_injury_btn = gr.Button("Add Injury", variant="primary")
 
         def load_profile(user_state):
             """Load user profile data."""
@@ -141,7 +158,6 @@ def profile_view(state):
                     gr.update(value=None),
                     gr.update(value=None),
                     gr.update(value="Please log in to view your profile"),
-                    gr.update(value=""),
                 )
 
             try:
@@ -162,7 +178,6 @@ def profile_view(state):
                         gr.update(value=None),
                         gr.update(value=None),
                         gr.update(value="Error: User profile not found"),
-                        gr.update(value=""),
                     )
 
                 user = UserProfile.from_dict(user_doc)
@@ -210,7 +225,6 @@ def profile_view(state):
                     gr.update(value=user.preferred_workout_duration),
                     gr.update(value=hevy_status_text),
                     gr.update(value=injuries_text),
-                    gr.update(value=""),
                 )
 
             except Exception as e:
@@ -229,7 +243,6 @@ def profile_view(state):
                     gr.update(value=None),
                     gr.update(value="Error loading profile"),
                     gr.update(value=""),
-                    gr.update(value=str(e)),
                 )
 
         def save_profile(user_state, hevy_api_key):
@@ -319,6 +332,74 @@ def profile_view(state):
                 logger.error(f"Error adding injury: {str(e)}", exc_info=True)
                 return gr.update(value=f"Error adding injury: {str(e)}")
 
+        def toggle_injury_active(user_state, injury_index):
+            """Toggle the active status of an injury."""
+            logger.info(f"Toggling injury {injury_index} active status")
+            if not user_state:
+                return gr.update(value="Please log in to modify injuries")
+
+            try:
+                # Get current user document
+                user_doc = db.get_document(user_state["id"])
+                if not user_doc:
+                    return gr.update(value="Error: User profile not found")
+
+                user = UserProfile.from_dict(user_doc)
+
+                # Convert index to 0-based and validate
+                idx = int(injury_index) - 1
+                if idx < 0 or idx >= len(user.injuries):
+                    return gr.update(value="Invalid injury index")
+
+                # Toggle active status
+                user.injuries[idx].is_active = not user.injuries[idx].is_active
+
+                # Save changes
+                update_doc = user.model_dump()
+                update_doc["_rev"] = user_doc["_rev"]
+                db.save_document(update_doc, doc_id=user_state["id"])
+                logger.info(f"Successfully toggled injury {injury_index} active status")
+
+                return gr.update(value="Injury status updated successfully")
+
+            except Exception as e:
+                logger.error(f"Error toggling injury status: {str(e)}", exc_info=True)
+                return gr.update(value=f"Error updating injury status: {str(e)}")
+
+        def delete_injury(user_state, injury_index):
+            """Delete an injury from the user's profile."""
+            logger.info(f"Deleting injury {injury_index}")
+            if not user_state:
+                return gr.update(value="Please log in to delete injuries")
+
+            try:
+                # Get current user document
+                user_doc = db.get_document(user_state["id"])
+                if not user_doc:
+                    return gr.update(value="Error: User profile not found")
+
+                user = UserProfile.from_dict(user_doc)
+
+                # Convert index to 0-based and validate
+                idx = int(injury_index) - 1
+                if idx < 0 or idx >= len(user.injuries):
+                    return gr.update(value="Invalid injury index")
+
+                # Remove injury
+                del user.injuries[idx]
+
+                # Save changes
+                update_doc = user.model_dump()
+                update_doc["_rev"] = user_doc["_rev"]
+                db.save_document(update_doc, doc_id=user_state["id"])
+                logger.info(f"Successfully deleted injury {injury_index}")
+
+                return gr.update(value="Injury deleted successfully")
+
+            except Exception as e:
+                logger.error(f"Error deleting injury: {str(e)}", exc_info=True)
+                return gr.update(value=f"Error deleting injury: {str(e)}")
+
         # Setup event handlers
         logger.info("Setting up profile event handlers")
 
@@ -356,7 +437,6 @@ def profile_view(state):
                 workout_duration,
                 hevy_status,
                 injuries_list,
-                gr.Textbox(visible=False),
             ],
         )
 
@@ -390,7 +470,55 @@ def profile_view(state):
                 workout_duration,
                 hevy_status,
                 injuries_list,
-                gr.Textbox(visible=False),
+            ],
+        )
+
+        # Connect injury action buttons
+        toggle_active_btn.click(
+            fn=lambda x: toggle_injury_active(state["user_state"], x),
+            inputs=[injury_index],
+            outputs=[injuries_list],
+        ).then(
+            fn=lambda x: load_profile(x),
+            inputs=[state["user_state"]],
+            outputs=[
+                username,
+                email,
+                age,
+                sex,
+                height_feet,
+                height_inches,
+                weight_lbs,
+                experience,
+                goals,
+                workout_days,
+                workout_duration,
+                hevy_status,
+                injuries_list,
+            ],
+        )
+
+        delete_injury_btn.click(
+            fn=lambda x: delete_injury(state["user_state"], x),
+            inputs=[injury_index],
+            outputs=[injuries_list],
+        ).then(
+            fn=lambda x: load_profile(x),
+            inputs=[state["user_state"]],
+            outputs=[
+                username,
+                email,
+                age,
+                sex,
+                height_feet,
+                height_inches,
+                weight_lbs,
+                experience,
+                goals,
+                workout_days,
+                workout_duration,
+                hevy_status,
+                injuries_list,
             ],
         )
 
@@ -410,6 +538,5 @@ def profile_view(state):
             workout_duration,
             hevy_status,
             injuries_list,
-            gr.Textbox(visible=False),
             load_profile,
         )
