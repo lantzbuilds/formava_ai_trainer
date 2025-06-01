@@ -147,6 +147,7 @@ def app():
         user_state = gr.State(None)  # Store user session data
 
         def update_visibility(page):
+            """Update visibility of blocks and navigation button states."""
             return (
                 gr.update(visible=page == "register"),
                 gr.update(visible=page == "login"),
@@ -154,6 +155,12 @@ def app():
                 gr.update(visible=page == "ai_recs"),
                 gr.update(visible=page == "profile"),
                 page,
+                # Update button variants to show active state
+                gr.update(variant="primary" if page == "register" else "secondary"),
+                gr.update(variant="primary" if page == "login" else "secondary"),
+                gr.update(variant="primary" if page == "dashboard" else "secondary"),
+                gr.update(variant="primary" if page == "ai_recs" else "secondary"),
+                gr.update(variant="primary" if page == "profile" else "secondary"),
             )
 
         def update_nav_visibility(user):
@@ -179,6 +186,22 @@ def app():
                     gr.update(visible=True),  # logout
                 )
 
+        def handle_register(user, error_msg):
+            """Handle successful registration."""
+            if user is None:
+                return (
+                    None,
+                    *update_nav_visibility(None),
+                    "register",
+                    *update_visibility("dashboard")[6:],
+                )
+            return (
+                user,  # Update user state
+                *update_nav_visibility(user),  # Update nav visibility
+                "dashboard",  # Redirect to dashboard
+                *update_visibility("dashboard")[6:],  # Update button variants
+            )
+
         def handle_login(username, password):
             """Handle login attempt."""
             try:
@@ -191,9 +214,7 @@ def app():
                         None,  # user_state
                         *update_nav_visibility(None),  # nav buttons
                         "login",  # current_page
-                        gr.update(
-                            value="Invalid username or password", visible=True
-                        ),  # error message
+                        *update_visibility("login")[6:],  # button variants
                     )
 
                 # Create UserProfile instance from document
@@ -206,9 +227,7 @@ def app():
                         None,  # user_state
                         *update_nav_visibility(None),  # nav buttons
                         "login",  # current_page
-                        gr.update(
-                            value="Invalid username or password", visible=True
-                        ),  # error message
+                        *update_visibility("login")[6:],  # button variants
                     )
 
                 # Return user object for state management
@@ -228,7 +247,7 @@ def app():
                     user,  # user_state
                     *nav_updates,  # nav buttons
                     "dashboard",  # current_page
-                    gr.update(visible=False),  # error message
+                    *update_visibility("dashboard")[6:],  # button variants
                 )
 
             except Exception as e:
@@ -237,20 +256,8 @@ def app():
                     None,  # user_state
                     *update_nav_visibility(None),  # nav buttons
                     "login",  # current_page
-                    gr.update(
-                        value=f"Login failed: {str(e)}", visible=True
-                    ),  # error message
+                    *update_visibility("login")[6:],  # button variants
                 )
-
-        def handle_register(user, error_msg):
-            """Handle successful registration."""
-            if user is None:
-                return None, *update_nav_visibility(None), "register"
-            return (
-                user,  # Update user state
-                *update_nav_visibility(user),  # Update nav visibility
-                "dashboard",  # Redirect to dashboard
-            )
 
         def handle_logout():
             """Handle user logout."""
@@ -258,6 +265,7 @@ def app():
                 None,  # Clear user state
                 *update_nav_visibility(None),  # Update nav visibility
                 "login",  # Redirect to login
+                *update_visibility("login")[6:],  # Update button variants
             )
 
         # Main container for better responsiveness
@@ -300,7 +308,14 @@ def app():
                     username = login_components[2]
                     password = login_components[3]
                 with gr.Group(visible=False) as dashboard_block:
-                    dashboard_view()
+                    dashboard_components = dashboard_view()
+                    welcome_message = dashboard_components[0]
+                    total_workouts = dashboard_components[1]
+                    avg_workouts = dashboard_components[2]
+                    last_workout = dashboard_components[3]
+                    workout_streak = dashboard_components[4]
+                    goals_section = dashboard_components[5]
+                    injuries_section = dashboard_components[6]
                 with gr.Group(visible=False) as ai_recs_block:
                     ai_recs_view()
                 with gr.Group(visible=False) as profile_block:
@@ -317,6 +332,11 @@ def app():
                     ai_recs_block,
                     profile_block,
                     current_page,
+                    register_btn,
+                    login_btn,
+                    dashboard_btn,
+                    ai_recs_btn,
+                    profile_btn,
                 ],
             )
             login_btn.click(
@@ -329,6 +349,11 @@ def app():
                     ai_recs_block,
                     profile_block,
                     current_page,
+                    register_btn,
+                    login_btn,
+                    dashboard_btn,
+                    ai_recs_btn,
+                    profile_btn,
                 ],
             )
             dashboard_btn.click(
@@ -341,6 +366,11 @@ def app():
                     ai_recs_block,
                     profile_block,
                     current_page,
+                    register_btn,
+                    login_btn,
+                    dashboard_btn,
+                    ai_recs_btn,
+                    profile_btn,
                 ],
             )
             ai_recs_btn.click(
@@ -353,6 +383,11 @@ def app():
                     ai_recs_block,
                     profile_block,
                     current_page,
+                    register_btn,
+                    login_btn,
+                    dashboard_btn,
+                    ai_recs_btn,
+                    profile_btn,
                 ],
             )
             profile_btn.click(
@@ -365,6 +400,11 @@ def app():
                     ai_recs_block,
                     profile_block,
                     current_page,
+                    register_btn,
+                    login_btn,
+                    dashboard_btn,
+                    ai_recs_btn,
+                    profile_btn,
                 ],
             )
             logout_btn.click(
@@ -379,6 +419,27 @@ def app():
                     profile_btn,
                     logout_btn,
                     current_page,
+                    register_btn,
+                    login_btn,
+                    dashboard_btn,
+                    ai_recs_btn,
+                    profile_btn,
+                ],
+            ).then(
+                fn=update_visibility,
+                inputs=[current_page],
+                outputs=[
+                    register_block,
+                    login_block,
+                    dashboard_block,
+                    ai_recs_block,
+                    profile_block,
+                    current_page,
+                    register_btn,
+                    login_btn,
+                    dashboard_btn,
+                    ai_recs_btn,
+                    profile_btn,
                 ],
             )
 
@@ -395,7 +456,11 @@ def app():
                     profile_btn,
                     logout_btn,
                     current_page,
-                    login_error,
+                    register_btn,
+                    login_btn,
+                    dashboard_btn,
+                    ai_recs_btn,
+                    profile_btn,
                 ],
             ).then(
                 fn=lambda x: logger.info(f"Main app user state updated: {x}"),
@@ -411,6 +476,11 @@ def app():
                     ai_recs_block,
                     profile_block,
                     current_page,
+                    register_btn,
+                    login_btn,
+                    dashboard_btn,
+                    ai_recs_btn,
+                    profile_btn,
                 ],
             )
             register_button.click(
@@ -425,6 +495,11 @@ def app():
                     profile_btn,
                     logout_btn,
                     current_page,
+                    register_btn,
+                    login_btn,
+                    dashboard_btn,
+                    ai_recs_btn,
+                    profile_btn,
                 ],
             ).then(
                 fn=update_visibility,
@@ -436,6 +511,26 @@ def app():
                     ai_recs_block,
                     profile_block,
                     current_page,
+                    register_btn,
+                    login_btn,
+                    dashboard_btn,
+                    ai_recs_btn,
+                    profile_btn,
+                ],
+            )
+
+            # Update dashboard when user state changes
+            user_state.change(
+                fn=lambda x: dashboard_components[7](x),
+                inputs=[user_state],
+                outputs=[
+                    welcome_message,
+                    total_workouts,
+                    avg_workouts,
+                    last_workout,
+                    workout_streak,
+                    goals_section,
+                    injuries_section,
                 ],
             )
 
