@@ -27,41 +27,4 @@ def login_view():
             login_button = gr.Button("Login", variant="primary")
             error_message = gr.Markdown(visible=False)
 
-        def handle_login(username, password):
-            try:
-                # Get user from database
-                user_doc = db.get_user_by_username(username)
-                if not user_doc:
-                    return None, gr.update(
-                        value="Invalid username or password", visible=True
-                    )
-
-                # Create UserProfile instance from document
-                user_profile = UserProfile.from_dict(user_doc)
-
-                # Verify password using the UserProfile instance
-                if not user_profile.verify_password(password):
-                    return None, gr.update(
-                        value="Invalid username or password", visible=True
-                    )
-
-                # Return user object for state management
-                user = {
-                    "id": user_doc["_id"],
-                    "username": user_doc["username"],
-                    "email": user_doc["email"],
-                }
-
-                return user, gr.update(visible=False)
-
-            except Exception as e:
-                logger.error(f"Login failed: {str(e)}", exc_info=True)
-                return None, gr.update(value=f"Login failed: {str(e)}", visible=True)
-
-        login_button.click(
-            fn=handle_login,
-            inputs=[username, password],
-            outputs=[gr.State(), error_message],
-        )
-
-        return login_button, error_message
+        return login_button, error_message, username, password
