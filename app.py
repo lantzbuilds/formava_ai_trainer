@@ -339,6 +339,17 @@ def app():
                     logout_btn,
                     current_page,
                 ],
+            ).then(
+                fn=update_visibility,
+                inputs=[current_page],
+                outputs=[
+                    register_block,
+                    login_block,
+                    dashboard_block,
+                    ai_recs_block,
+                    profile_block,
+                    current_page,
+                ],
             )
             register_button.click(
                 fn=handle_register,
@@ -351,6 +362,17 @@ def app():
                     ai_recs_btn,
                     profile_btn,
                     logout_btn,
+                    current_page,
+                ],
+            ).then(
+                fn=update_visibility,
+                inputs=[current_page],
+                outputs=[
+                    register_block,
+                    login_block,
+                    dashboard_block,
+                    ai_recs_block,
+                    profile_block,
                     current_page,
                 ],
             )

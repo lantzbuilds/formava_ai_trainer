@@ -15,7 +15,12 @@ def login_view():
 
         username = gr.Textbox(label="Username", placeholder="Enter your username")
         password = gr.Textbox(
-            label="Password", placeholder="Enter your password", type="password"
+            label="Password",
+            placeholder="Enter your password",
+            type="password",
+            show_label=True,
+            interactive=True,
+            visible=True,
         )
 
         with gr.Row():
@@ -31,8 +36,11 @@ def login_view():
                         value="Invalid username or password", visible=True
                     )
 
-                # Verify password
-                if not UserProfile.verify_password(password, user_doc["password"]):
+                # Create UserProfile instance from document
+                user_profile = UserProfile.from_dict(user_doc)
+
+                # Verify password using the UserProfile instance
+                if not user_profile.verify_password(password):
                     return None, gr.update(
                         value="Invalid username or password", visible=True
                     )

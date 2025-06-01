@@ -26,16 +26,24 @@ def register_view():
 
         with gr.Row():
             password = gr.Textbox(
-                label="Password", placeholder="Enter your password", type="password"
+                label="Password",
+                placeholder="Enter your password",
+                type="password",
+                show_label=True,
+                interactive=True,
+                visible=True,
             )
             confirm_password = gr.Textbox(
                 label="Confirm Password",
                 placeholder="Confirm your password",
                 type="password",
+                show_label=True,
+                interactive=True,
+                visible=True,
             )
 
         with gr.Row():
-            with gr.Column():
+            with gr.Column(scale=4):
                 # Height in feet and inches
                 height_feet = gr.Number(
                     label="Height (feet)", minimum=3, maximum=8, value=5
@@ -75,6 +83,77 @@ def register_view():
                 step=15,
             )
 
+        # Injury Management Section
+        gr.Markdown("### Injuries (Optional)")
+        injuries = gr.State([])  # Store list of injuries
+
+        with gr.Row():
+            injury_description = gr.Textbox(
+                label="Injury Description", placeholder="e.g., Left knee pain"
+            )
+            injury_body_part = gr.Textbox(
+                label="Body Part", placeholder="e.g., Left knee"
+            )
+            injury_severity = gr.Dropdown(
+                label="Severity",
+                choices=[s.value for s in InjurySeverity],
+                value=InjurySeverity.MILD.value,
+            )
+            injury_notes = gr.Textbox(
+                label="Notes (Optional)",
+                placeholder="Additional details about the injury",
+            )
+
+        with gr.Row():
+            add_injury_btn = gr.Button("Add Injury")
+            clear_injuries_btn = gr.Button("Clear All Injuries")
+
+        injuries_list = gr.Markdown("No injuries added yet")
+
+        def add_injury(description, body_part, severity, notes, current_injuries):
+            if not description or not body_part:
+                return current_injuries, gr.update(
+                    value="Please fill in all required injury fields"
+                )
+
+            new_injury = {
+                "description": description,
+                "body_part": body_part,
+                "severity": severity,
+                "date_injured": datetime.now(timezone.utc).isoformat(),
+                "is_active": True,
+                "notes": notes if notes else None,
+            }
+
+            updated_injuries = current_injuries + [new_injury]
+            injuries_text = "\n".join(
+                [
+                    f"- {i['description']} ({i['body_part']}, {i['severity']})"
+                    for i in updated_injuries
+                ]
+            )
+
+            return updated_injuries, gr.update(value=injuries_text)
+
+        def clear_injuries():
+            return [], gr.update(value="No injuries added yet")
+
+        add_injury_btn.click(
+            fn=add_injury,
+            inputs=[
+                injury_description,
+                injury_body_part,
+                injury_severity,
+                injury_notes,
+                injuries,
+            ],
+            outputs=[injuries, injuries_list],
+        )
+
+        clear_injuries_btn.click(
+            fn=clear_injuries, inputs=[], outputs=[injuries, injuries_list]
+        )
+
         # Hevy API Integration
         gr.Markdown("### Hevy API Integration (Optional)")
         hevy_api_key = gr.Textbox(
@@ -101,6 +180,7 @@ def register_view():
             goals,
             preferred_workout_days,
             preferred_workout_duration,
+            injuries,
             hevy_api_key,
         ):
             try:
@@ -144,7 +224,7 @@ def register_view():
                     preferred_workout_days=preferred_workout_days,
                     preferred_workout_duration=preferred_workout_duration,
                     hevy_api_key=encrypted_key,
-                    injuries=[],  # We'll add injury management in a separate step
+                    injuries=injuries,
                 )
 
                 # Save to database
@@ -178,6 +258,7 @@ def register_view():
                 goals,
                 preferred_workout_days,
                 preferred_workout_duration,
+                injuries,
                 hevy_api_key,
             ],
             outputs=[gr.State(), error_message],
