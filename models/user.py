@@ -148,15 +148,23 @@ class UserProfile(BaseModel):
 
     @classmethod
     def from_dict(cls, data: dict) -> "UserProfile":
+        """Create a UserProfile instance from a dictionary."""
         return cls(
+            id=data.get("_id", data.get("id")),
             username=data["username"],
             email=data["email"],
             password_hash=data["password_hash"],
-            injuries=[
-                Injury.from_dict(injury_data)
-                for injury_data in data.get("injuries", [])
-            ],
+            height_cm=data["height_cm"],
+            weight_kg=data["weight_kg"],
+            sex=Sex(data["sex"]),
+            age=data["age"],
+            fitness_goals=[FitnessGoal(g) for g in data.get("fitness_goals", [])],
+            experience_level=data["experience_level"],
+            preferred_workout_days=data.get("preferred_workout_days", 3),
+            preferred_workout_duration=data.get("preferred_workout_duration", 60),
             hevy_api_key=data.get("hevy_api_key"),
+            injuries=[Injury(**injury) for injury in data.get("injuries", [])],
+            _rev=data.get("_rev"),
         )
 
     class Config:
