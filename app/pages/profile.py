@@ -3,6 +3,7 @@ Profile page for the AI Personal Trainer application.
 """
 
 import logging
+import sys
 from datetime import datetime, timezone
 
 import gradio as gr
@@ -13,8 +14,16 @@ from app.utils.crypto import encrypt_api_key
 from app.utils.units import cm_to_inches, kg_to_lbs
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    stream=sys.stdout,
+)
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Add a test log message
+logger.info("Profile module loaded")
 
 # Initialize database connection
 db = Database()
@@ -22,6 +31,9 @@ db = Database()
 
 def profile_view(state):
     """Display the profile page."""
+    logger.info("Initializing profile view with state")
+    logger.info(f"User state in profile view: {state['user_state'].value}")
+
     with gr.Column():
         gr.Markdown("## Profile")
 
@@ -262,19 +274,24 @@ def profile_view(state):
             user_state, description, body_part, severity, date_injured, is_active, notes
         ):
             """Add a new injury to the user's profile."""
+            logger.info(f"Adding injury with user state: {user_state}")
             if not user_state:
+                logger.warning("No user state provided when adding injury")
                 return gr.update(value="Please log in to add injuries")
 
             if not description or not body_part:
+                logger.warning("Missing required fields: description or body part")
                 return gr.update(value="Description and Body Part are required")
 
             try:
                 # Get current user document
                 user_doc = db.get_document(user_state["id"])
                 if not user_doc:
+                    logger.error(f"User document not found for ID: {user_state['id']}")
                     return gr.update(value="Error: User profile not found")
 
                 user = UserProfile.from_dict(user_doc)
+                logger.info(f"Found user profile for: {user.username}")
 
                 # Create new injury
                 new_injury = {
@@ -285,6 +302,7 @@ def profile_view(state):
                     "is_active": is_active,
                     "notes": notes,
                 }
+                logger.info(f"Created new injury: {new_injury}")
 
                 # Add injury to user's profile
                 user.injuries.append(new_injury)
@@ -293,6 +311,7 @@ def profile_view(state):
                 update_doc = user.model_dump()
                 update_doc["_rev"] = user_doc["_rev"]
                 db.save_document(update_doc, doc_id=user_state["id"])
+                logger.info("Successfully saved injury to user profile")
 
                 return gr.update(value="Injury added successfully")
 
@@ -301,12 +320,27 @@ def profile_view(state):
                 return gr.update(value=f"Error adding injury: {str(e)}")
 
         # Setup event handlers
+        logger.info("Setting up profile event handlers")
+
+        def handle_add_injury(*args):
+            """Wrapper function to handle add injury with logging."""
+            logger.info("Add injury handler called")
+            logger.info(f"Arguments received: {args}")
+            try:
+                result = add_injury(*args)
+                logger.info(f"Add injury result: {result}")
+                return result
+            except Exception as e:
+                logger.error(f"Error in handle_add_injury: {str(e)}", exc_info=True)
+                raise
+
+        logger.info("Setting up save Hevy key button click handler")
         save_hevy_key.click(
             fn=save_profile,
             inputs=[state["user_state"], hevy_api_key],
             outputs=[hevy_status],
         ).then(
-            fn=load_profile,
+            fn=lambda x: load_profile(x),
             inputs=[state["user_state"]],
             outputs=[
                 username,
@@ -326,10 +360,11 @@ def profile_view(state):
             ],
         )
 
+        logger.info("Setting up add injury button click handler")
         add_injury_btn.click(
-            fn=add_injury,
+            fn=handle_add_injury,
             inputs=[
-                gr.State(),
+                state["user_state"],
                 injury_desc,
                 injury_part,
                 injury_severity,
@@ -338,7 +373,28 @@ def profile_view(state):
                 injury_notes,
             ],
             outputs=[injuries_list],
+        ).then(
+            fn=lambda x: load_profile(x),
+            inputs=[state["user_state"]],
+            outputs=[
+                username,
+                email,
+                age,
+                sex,
+                height_feet,
+                height_inches,
+                weight_lbs,
+                experience,
+                goals,
+                workout_days,
+                workout_duration,
+                hevy_status,
+                injuries_list,
+                gr.Textbox(visible=False),
+            ],
         )
+
+        logger.info("Profile view setup complete")
 
         return (
             username,
