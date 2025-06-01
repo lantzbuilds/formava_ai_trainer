@@ -25,7 +25,7 @@ def run_gradio(args: List[str] = None):
 
     # Base command for running the dev server
     cmd = [
-        "python",
+        "gradio",
         "app/scripts/dev_server.py",
     ]
 

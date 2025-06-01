@@ -60,9 +60,10 @@ def create_app():
 
         # Create Gradio app
         app = gr.Blocks(
-            title="AI Personal Trainer",
+            title="Formava AI Fitness",
             theme=setup_theme(),
             css="app/static/css/style.css",
+            favicon_path="app/static/images/favicon.ico",
         )
 
         # Setup application state
