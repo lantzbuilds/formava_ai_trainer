@@ -3,14 +3,14 @@ def inches_to_cm(inches: float) -> float:
     return inches * 2.54
 
 
-def cm_to_inches(cm: float) -> float:
-    """Convert centimeters to inches."""
-    return cm / 2.54
-
-
 def lbs_to_kg(lbs: float) -> float:
     """Convert pounds to kilograms."""
     return lbs * 0.45359237
+
+
+def cm_to_inches(cm: float) -> float:
+    """Convert centimeters to inches."""
+    return cm / 2.54
 
 
 def kg_to_lbs(kg: float) -> float:

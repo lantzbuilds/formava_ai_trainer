@@ -2,16 +2,22 @@
 Vector store service for the AI Personal Trainer application.
 """
 
+import json
 import logging
 import os
 import uuid
 from typing import Any, Dict, List, Optional
 
+import numpy as np
+from dotenv import load_dotenv
 from langchain.embeddings import CacheBackedEmbeddings
 from langchain.storage import LocalFileStore
 from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
+
+from app.config.database import Database
+from app.models.exercise import Exercise, ExerciseList
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

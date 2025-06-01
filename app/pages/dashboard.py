@@ -3,8 +3,8 @@ from datetime import datetime, timedelta, timezone
 
 import gradio as gr
 
-from config.database import Database
-from models.user import UserProfile
+from app.config.database import Database
+from app.models.user import UserProfile
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

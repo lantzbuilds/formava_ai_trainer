@@ -2,9 +2,14 @@
 Service for building and formatting routine folders.
 """
 
+import json
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
+
+from app.config.database import Database
+from app.models.exercise import Exercise, ExerciseList
 
 logger = logging.getLogger(__name__)
 

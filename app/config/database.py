@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import couchdb
 from dotenv import load_dotenv
 
-from config.config import COUCHDB_DB, COUCHDB_PASSWORD, COUCHDB_URL, COUCHDB_USER
+from app.config.config import COUCHDB_DB, COUCHDB_PASSWORD, COUCHDB_URL, COUCHDB_USER
 
 from .views import create_user_views, create_workout_views
 

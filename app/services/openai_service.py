@@ -3,18 +3,19 @@ import json
 import logging
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional
 
+import openai
 import requests
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from config.database import Database
-from services.hevy_api import HevyAPI
-from services.routine_folder_builder import RoutineFolderBuilder
-from services.vector_store import ExerciseVectorStore
-from utils.crypto import decrypt_api_key
+from app.config.database import Database
+from app.services.hevy_api import HevyAPI
+from app.services.routine_folder_builder import RoutineFolderBuilder
+from app.services.vector_store import ExerciseVectorStore
+from app.utils.crypto import decrypt_api_key
 
 # Configure logging
 logger = logging.getLogger(__name__)
