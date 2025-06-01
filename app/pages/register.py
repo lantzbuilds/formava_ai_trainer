@@ -3,10 +3,10 @@ from datetime import datetime, timezone
 
 import gradio as gr
 
-from config.database import Database
-from models.user import FitnessGoal, InjurySeverity, Sex, UserProfile
-from utils.crypto import encrypt_api_key
-from utils.units import inches_to_cm, lbs_to_kg
+from app.config.database import Database
+from app.models.user import FitnessGoal, InjurySeverity, Sex, UserProfile
+from app.utils.crypto import encrypt_api_key
+from app.utils.units import inches_to_cm, lbs_to_kg
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

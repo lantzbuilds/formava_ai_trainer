@@ -2,8 +2,8 @@ import logging
 
 import gradio as gr
 
-from config.database import Database
-from models.user import UserProfile
+from app.config.database import Database
+from app.models.user import UserProfile
 
 db = Database()
 logger = logging.getLogger(__name__)

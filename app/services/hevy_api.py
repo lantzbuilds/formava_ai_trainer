@@ -4,10 +4,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Union
 
 import requests
+from dotenv import load_dotenv
 
-from config.database import Database
-from models.exercise import Exercise, ExerciseList
-from utils.crypto import decrypt_api_key
+from app.config.database import Database
+from app.models.exercise import Exercise, ExerciseList
+from app.utils.crypto import decrypt_api_key
 
 logger = logging.getLogger(__name__)
 
