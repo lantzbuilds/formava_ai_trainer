@@ -40,41 +40,38 @@ logger = logging.getLogger(__name__)
 # Load environment variables
 load_dotenv()
 
-# Initialize database connection
-db = Database()
+# Initialize database connection - only do this once
+if gr.NO_RELOAD:
+    db = Database()
+    logger.info("Database initialized successfully")
 
-# Bootstrap vectorstore if in production
-if os.getenv("ENV") == "production":
-    logger.info("Bootstrapping vectorstore for production environment")
-    from app.scripts.bootstrap_vectorstore import bootstrap_vectorstore
+    # Bootstrap vectorstore if in production
+    if os.getenv("ENV") == "production":
+        logger.info("Bootstrapping vectorstore for production environment")
+        from app.scripts.bootstrap_vectorstore import bootstrap_vectorstore
 
-    bootstrap_vectorstore()
+        bootstrap_vectorstore()
 
 
 def create_app():
     """Create and configure the Gradio application."""
     try:
-        # Initialize database
-        db = Database()
-        logger.info("Database initialized successfully")
-
         # Create Gradio app
-        app = gr.Blocks(
+        demo = gr.Blocks(
             title="Formava AI Fitness",
             theme=setup_theme(),
             css="app/static/css/style.css",
-            favicon_path="app/static/images/favicon.ico",
         )
 
         # Setup application state
-        state = setup_state(app)
+        state = setup_state(demo)
         logger.info("Application state initialized")
 
         # Setup routes and navigation
-        setup_routes(app, state)
+        setup_routes(demo, state)
         logger.info("Routes and navigation configured")
 
-        return app
+        return demo
 
     except Exception as e:
         logger.error(f"Failed to create application: {str(e)}", exc_info=True)
@@ -84,8 +81,14 @@ def create_app():
 def main():
     """Main entry point for the application."""
     try:
-        app = create_app()
-        app.launch(server_name="0.0.0.0", server_port=7860, share=True, debug=True)
+        demo = create_app()
+        demo.launch(
+            server_name="0.0.0.0",
+            server_port=7860,
+            share=True,
+            debug=True,
+            favicon_path="app/static/images/favicon.ico",
+        )
     except Exception as e:
         logger.error(f"Application failed to start: {str(e)}", exc_info=True)
         raise
