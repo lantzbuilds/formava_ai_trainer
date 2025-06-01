@@ -179,15 +179,68 @@ def app():
                     gr.update(visible=True),  # logout
                 )
 
-        def handle_login(user, error_msg):
-            """Handle successful login."""
-            if user is None:
-                return None, *update_nav_visibility(None), "login"
-            return (
-                user,  # Update user state
-                *update_nav_visibility(user),  # Update nav visibility
-                "dashboard",  # Redirect to dashboard
-            )
+        def handle_login(username, password):
+            """Handle login attempt."""
+            try:
+                logger.info(f"Attempting login for username: {username}")
+                # Get user from database
+                user_doc = db.get_user_by_username(username)
+                if not user_doc:
+                    logger.warning(f"User not found: {username}")
+                    return (
+                        None,  # user_state
+                        *update_nav_visibility(None),  # nav buttons
+                        "login",  # current_page
+                        gr.update(
+                            value="Invalid username or password", visible=True
+                        ),  # error message
+                    )
+
+                # Create UserProfile instance from document
+                user_profile = UserProfile.from_dict(user_doc)
+
+                # Verify password using the UserProfile instance
+                if not user_profile.verify_password(password):
+                    logger.warning(f"Invalid password for user: {username}")
+                    return (
+                        None,  # user_state
+                        *update_nav_visibility(None),  # nav buttons
+                        "login",  # current_page
+                        gr.update(
+                            value="Invalid username or password", visible=True
+                        ),  # error message
+                    )
+
+                # Return user object for state management
+                user = {
+                    "id": user_doc["_id"],
+                    "username": user_doc["username"],
+                    "email": user_doc["email"],
+                }
+                logger.info(
+                    f"Login successful for user: {username}, returning user state: {user}"
+                )
+
+                # Update navigation and redirect to dashboard
+                nav_updates = update_nav_visibility(user)
+                logger.info(f"Updating navigation with user state: {user}")
+                return (
+                    user,  # user_state
+                    *nav_updates,  # nav buttons
+                    "dashboard",  # current_page
+                    gr.update(visible=False),  # error message
+                )
+
+            except Exception as e:
+                logger.error(f"Login failed: {str(e)}", exc_info=True)
+                return (
+                    None,  # user_state
+                    *update_nav_visibility(None),  # nav buttons
+                    "login",  # current_page
+                    gr.update(
+                        value=f"Login failed: {str(e)}", visible=True
+                    ),  # error message
+                )
 
         def handle_register(user, error_msg):
             """Handle successful registration."""
@@ -241,7 +294,11 @@ def app():
                 with gr.Group(visible=False) as register_block:
                     register_button, register_error = register_view()
                 with gr.Group(visible=False) as login_block:
-                    login_button, login_error = login_view()
+                    login_components = login_view()
+                    login_button = login_components[0]
+                    login_error = login_components[1]
+                    username = login_components[2]
+                    password = login_components[3]
                 with gr.Group(visible=False) as dashboard_block:
                     dashboard_view()
                 with gr.Group(visible=False) as ai_recs_block:
@@ -328,7 +385,7 @@ def app():
             # Connect login and register handlers
             login_button.click(
                 fn=handle_login,
-                inputs=[login_button, login_error],
+                inputs=[username, password],
                 outputs=[
                     user_state,
                     register_btn,
@@ -338,7 +395,12 @@ def app():
                     profile_btn,
                     logout_btn,
                     current_page,
+                    login_error,
                 ],
+            ).then(
+                fn=lambda x: logger.info(f"Main app user state updated: {x}"),
+                inputs=[user_state],
+                outputs=[],
             ).then(
                 fn=update_visibility,
                 inputs=[current_page],
