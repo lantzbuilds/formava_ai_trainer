@@ -152,17 +152,13 @@ def dashboard_view():
                     gr.update(value="### Active Injuries\nError loading injuries"),
                 )
 
-        # Update dashboard when user state changes
-        gr.on(
-            fn=update_dashboard,
-            inputs=[gr.State()],
-            outputs=[
-                welcome_message,
-                total_workouts,
-                avg_workouts,
-                last_workout,
-                workout_streak,
-                goals_section,
-                injuries_section,
-            ],
+        return (
+            welcome_message,
+            total_workouts,
+            avg_workouts,
+            last_workout,
+            workout_streak,
+            goals_section,
+            injuries_section,
+            update_dashboard,
         )
