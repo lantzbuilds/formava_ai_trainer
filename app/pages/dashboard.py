@@ -14,7 +14,8 @@ logger = logging.getLogger(__name__)
 db = Database()
 
 
-def dashboard_view():
+def dashboard_view(state):
+    """Display the dashboard page."""
     with gr.Column():
         # Welcome message
         welcome_message = gr.Markdown()
@@ -36,8 +37,19 @@ def dashboard_view():
         with gr.Row():
             injuries_section = gr.Markdown("### Active Injuries\nLoading...")
 
+        # Add a hidden button for initial data loading
+        load_data_btn = gr.Button("Load Data", visible=False)
+
         def update_dashboard(user_state):
+            logger.info("Dashboard update called with user state")
+            logger.info(f"User state type: {type(user_state)}")
+            logger.info(f"User state value: {user_state}")
+            logger.info(f"User state has value attr: {hasattr(user_state, 'value')}")
+            if hasattr(user_state, "value"):
+                logger.info(f"User state value: {user_state.value}")
+
             if not user_state:
+                logger.warning("No user state provided to dashboard")
                 return (
                     gr.update(value="Please log in to view your dashboard"),
                     gr.update(value="### Total Workouts\nPlease log in to view stats"),
@@ -56,8 +68,30 @@ def dashboard_view():
 
             try:
                 # Get user profile
-                user_doc = db.get_document(user_state["id"])
+                user_id = (
+                    user_state.value.get("id")
+                    if hasattr(user_state, "value")
+                    else user_state.get("id")
+                )
+                logger.info(f"Extracted user ID: {user_id}")
+                if not user_id:
+                    logger.error("No user ID found in state")
+                    return (
+                        gr.update(value="Error: User ID not found in state"),
+                        gr.update(value="### Total Workouts\nError loading stats"),
+                        gr.update(
+                            value="### Average Workouts per Week\nError loading stats"
+                        ),
+                        gr.update(value="### Last Workout\nError loading stats"),
+                        gr.update(value="### Current Streak\nError loading stats"),
+                        gr.update(value="### Your Fitness Goals\nError loading goals"),
+                        gr.update(value="### Active Injuries\nError loading injuries"),
+                    )
+
+                user_doc = db.get_document(user_id)
+                logger.info(f"Retrieved user document: {bool(user_doc)}")
                 if not user_doc:
+                    logger.error(f"User document not found for ID: {user_id}")
                     return (
                         gr.update(value="Error: User profile not found"),
                         gr.update(value="### Total Workouts\nError loading stats"),
@@ -158,6 +192,28 @@ def dashboard_view():
                     gr.update(value="### Active Injuries\nError loading injuries"),
                 )
 
+        # Load initial data when page is shown
+        load_data_btn.click(
+            fn=update_dashboard,
+            inputs=[state["user_state"]],
+            outputs=[
+                welcome_message,
+                total_workouts,
+                avg_workouts,
+                last_workout,
+                workout_streak,
+                goals_section,
+                injuries_section,
+            ],
+        )
+
+        # Add logging to help debug state issues
+        logger.info("Setting up dashboard event handlers")
+        logger.info(f"User state type: {type(state['user_state'])}")
+        logger.info(
+            f"User state value: {state['user_state'].value if hasattr(state['user_state'], 'value') else state['user_state']}"
+        )
+
         return (
             welcome_message,
             total_workouts,
@@ -166,5 +222,6 @@ def dashboard_view():
             workout_streak,
             goals_section,
             injuries_section,
+            load_data_btn,
             update_dashboard,
         )
