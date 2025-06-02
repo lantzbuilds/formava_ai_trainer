@@ -77,17 +77,23 @@ def dashboard_view():
                 thirty_days_ago = now - timedelta(days=30)
                 stats = db.get_workout_stats(thirty_days_ago, now)
 
-                total_workouts_count = sum(stat["count"] for stat in stats)
-                avg_workouts_per_week = (
-                    total_workouts_count / 4
-                )  # Approximate for 30 days
+                # The stats view now returns a single aggregated result
+                if stats and len(stats) > 0:
+                    stats_data = stats[0]  # Get the first (and only) result
+                    total_workouts_count = stats_data.get("total_workouts", 0)
+                    avg_workouts_per_week = (
+                        total_workouts_count / 4
+                    )  # Approximate for 30 days
 
-                # Get last workout
-                last_workout_date = None
-                if stats:
-                    last_workout_date = max(
-                        stat.get("start_time", "") for stat in stats
+                    # Get last workout from the stats
+                    last_workout_info = stats_data.get("last_workout", {})
+                    last_workout_date = (
+                        last_workout_info.get("date") if last_workout_info else None
                     )
+                else:
+                    total_workouts_count = 0
+                    avg_workouts_per_week = 0
+                    last_workout_date = None
 
                 # Calculate streak
                 streak = 0
@@ -98,7 +104,7 @@ def dashboard_view():
                         datetime.combine(current_date, datetime.max.time()),
                     )
                     if not date_stats or not any(
-                        stat["count"] > 0 for stat in date_stats
+                        stat.get("total_workouts", 0) > 0 for stat in date_stats
                     ):
                         break
                     streak += 1
