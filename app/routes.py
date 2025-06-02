@@ -73,20 +73,6 @@ def setup_routes(app, state):
                 ai_recs_view()
             with gr.Group(visible=False) as profile_block:
                 profile_components = profile_view(state)
-                profile_username = profile_components[0]
-                profile_email = profile_components[1]
-                profile_age = profile_components[2]
-                profile_sex = profile_components[3]
-                profile_height_feet = profile_components[4]
-                profile_height_inches = profile_components[5]
-                profile_weight = profile_components[6]
-                profile_experience = profile_components[7]
-                profile_goals = profile_components[8]
-                profile_workout_days = profile_components[9]
-                profile_workout_duration = profile_components[10]
-                profile_hevy_status = profile_components[11]
-                profile_injuries = profile_components[12]
-                profile_error = profile_components[13]
 
         def handle_login(username, password):
             """Handle login attempt."""
@@ -386,24 +372,9 @@ def setup_routes(app, state):
 
         # Update profile when user state changes
         state["user_state"].change(
-            fn=profile_components[14],  # load_profile function
+            fn=profile_components[-1],  # load_profile function
             inputs=[state["user_state"]],
-            outputs=[
-                profile_username,
-                profile_email,
-                profile_age,
-                profile_sex,
-                profile_height_feet,
-                profile_height_inches,
-                profile_weight,
-                profile_experience,
-                profile_goals,
-                profile_workout_days,
-                profile_workout_duration,
-                profile_hevy_status,
-                profile_injuries,
-                profile_error,
-            ],
+            outputs=[],
         )
 
         # Initial nav visibility update

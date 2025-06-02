@@ -94,23 +94,7 @@ def profile_view(state):
         # Injuries Section
         with gr.Group() as injuries_container:
             gr.Markdown("### Injuries")
-
-            # Current Injuries Display
             injuries_list = gr.Markdown("Loading injuries...")
-
-            # Injury Actions
-            with gr.Row():
-                with gr.Column(scale=1):
-                    injury_index = gr.Number(
-                        label="Injury Number", interactive=True, minimum=1, step=1
-                    )
-                with gr.Column(scale=2):
-                    with gr.Row():
-                        toggle_active_btn = gr.Button(
-                            "Toggle Active Status", variant="secondary"
-                        )
-                        delete_injury_btn = gr.Button("Delete Injury", variant="stop")
-
             # Add New Injury Form
             with gr.Group():
                 gr.Markdown("#### Add New Injury")
@@ -140,6 +124,21 @@ def profile_view(state):
                         placeholder="Additional details about the injury",
                     )
                 add_injury_btn = gr.Button("Add Injury", variant="primary")
+
+        # Injury Controls Section (outside injuries_container)
+        with gr.Group():
+            gr.Markdown("#### Injury Controls")
+            with gr.Row():
+                with gr.Column(scale=1):
+                    injury_index = gr.Number(
+                        label="Injury Number", interactive=True, minimum=1, step=1
+                    )
+                with gr.Column(scale=2):
+                    with gr.Row():
+                        toggle_active_btn = gr.Button(
+                            "Toggle Active Status", variant="secondary"
+                        )
+                        delete_injury_btn = gr.Button("Delete Injury", variant="stop")
 
         def load_profile(user_state):
             """Load user profile data."""
@@ -538,5 +537,8 @@ def profile_view(state):
             workout_duration,
             hevy_status,
             injuries_list,
+            injury_index,
+            toggle_active_btn,
+            delete_injury_btn,
             load_profile,
         )
