@@ -372,9 +372,23 @@ def setup_routes(app, state):
 
         # Update profile when user state changes
         state["user_state"].change(
-            fn=profile_components[-1],  # load_profile function
+            fn=profile_components["load_profile"],
             inputs=[state["user_state"]],
-            outputs=[],
+            outputs=[
+                profile_components["username"],
+                profile_components["email"],
+                profile_components["age"],
+                profile_components["sex"],
+                profile_components["height_feet"],
+                profile_components["height_inches"],
+                profile_components["weight_lbs"],
+                profile_components["experience"],
+                profile_components["goals"],
+                profile_components["workout_days"],
+                profile_components["workout_duration"],
+                profile_components["hevy_status"],
+                profile_components["injuries_list"],
+            ],
         )
 
         # Initial nav visibility update

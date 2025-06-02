@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 import gradio as gr
 
 from app.config.database import Database
-from app.models.user import FitnessGoal, InjurySeverity, Sex, UserProfile
+from app.models.user import FitnessGoal, Injury, InjurySeverity, Sex, UserProfile
 from app.utils.crypto import encrypt_api_key
 from app.utils.units import cm_to_inches, kg_to_lbs
 
@@ -32,7 +32,7 @@ db = Database()
 def profile_view(state):
     """Display the profile page."""
     logger.info("Initializing profile view with state")
-    logger.info(f"User state in profile view: {state['user_state'].value}")
+    logger.info(f"User state in profile view: {getattr(state, 'value', state)}")
 
     with gr.Column():
         gr.Markdown("## Profile")
@@ -142,6 +142,9 @@ def profile_view(state):
 
         def load_profile(user_state):
             """Load user profile data."""
+            logger.info("Initializing profile view with state")
+            logger.info(f"User state in profile view: {getattr(state, 'value', state)}")
+
             if not user_state:
                 return (
                     gr.update(value="Please log in to view your profile"),
@@ -161,7 +164,12 @@ def profile_view(state):
 
             try:
                 # Get user profile
-                user_doc = db.get_document(user_state["id"])
+                user_id = (
+                    user_state.value["id"]
+                    if hasattr(user_state, "value")
+                    else user_state["id"]
+                )
+                user_doc = db.get_document(user_id)
                 if not user_doc:
                     return (
                         gr.update(value="Error: User profile not found"),
@@ -189,16 +197,34 @@ def profile_view(state):
                 # Convert weight from kg to lbs
                 weight_lbs_val = kg_to_lbs(user.weight_kg)
 
+                # Log the value and type of user.injuries before checking if it is truthy
+                logger.info(f"user.injuries type: {type(user.injuries)}")
+                logger.info(f"user.injuries value: {user.injuries}")
+                if isinstance(user.injuries, list):
+                    logger.info(f"user.injuries length: {len(user.injuries)}")
                 # Format injuries list
                 injuries_text = "No injuries recorded"
                 if user.injuries:
                     injuries_text = "### Current Injuries\n"
                     for i, injury in enumerate(user.injuries, 1):
+                        # Debug logging
+                        # logger.info(f"Injury type: {type(injury)}")
+                        # logger.info(f"Injury attributes: {[attr for attr in dir(injury) if not attr.startswith('_')]}")
+                        # logger.info(f"Injury model_dump: {injury.model_dump() if hasattr(injury, 'model_dump') else 'No model_dump'}")
+                        # logger.info(f"Injury raw: {injury}")
+
+                        # Use object attribute access for injury fields
                         injuries_text += f"\n#### Injury {i}\n"
                         injuries_text += f"- **Description:** {injury.description}\n"
                         injuries_text += f"- **Body Part:** {injury.body_part}\n"
                         injuries_text += f"- **Severity:** {injury.severity.value}\n"
-                        injuries_text += f"- **Date Injured:** {injury.date_injured.strftime('%Y-%m-%d')}\n"
+                        # Handle date_injured as string or datetime
+                        date_injured = injury.date_injured
+                        if hasattr(date_injured, "strftime"):
+                            date_str = date_injured.strftime("%Y-%m-%d")
+                        else:
+                            date_str = str(date_injured)
+                        injuries_text += f"- **Date Injured:** {date_str}\n"
                         injuries_text += f"- **Currently Active:** {'Yes' if injury.is_active else 'No'}\n"
                         if injury.notes:
                             injuries_text += f"- **Notes:** {injury.notes}\n"
@@ -251,7 +277,12 @@ def profile_view(state):
 
             try:
                 # Get current user document
-                user_doc = db.get_document(user_state["id"])
+                user_id = (
+                    user_state.value["id"]
+                    if hasattr(user_state, "value")
+                    else user_state["id"]
+                )
+                user_doc = db.get_document(user_id)
                 if not user_doc:
                     return gr.update(value="Error: User profile not found")
 
@@ -266,7 +297,7 @@ def profile_view(state):
                     # Save changes
                     update_doc = user.model_dump()
                     update_doc["_rev"] = user_doc["_rev"]
-                    db.save_document(update_doc, doc_id=user_state["id"])
+                    db.save_document(update_doc, doc_id=user_id)
 
                     # Return success message with timestamp
                     timestamp = user.hevy_api_key_updated_at.strftime(
@@ -297,7 +328,12 @@ def profile_view(state):
 
             try:
                 # Get current user document
-                user_doc = db.get_document(user_state["id"])
+                user_id = (
+                    user_state.value["id"]
+                    if hasattr(user_state, "value")
+                    else user_state["id"]
+                )
+                user_doc = db.get_document(user_id)
                 if not user_doc:
                     logger.error(f"User document not found for ID: {user_state['id']}")
                     return gr.update(value="Error: User profile not found")
@@ -306,23 +342,25 @@ def profile_view(state):
                 logger.info(f"Found user profile for: {user.username}")
 
                 # Create new injury
-                new_injury = {
-                    "description": description,
-                    "body_part": body_part,
-                    "severity": severity,
-                    "date_injured": date_injured,
-                    "is_active": is_active,
-                    "notes": notes,
-                }
+                new_injury = Injury(
+                    description=description,
+                    body_part=body_part,
+                    severity=severity,
+                    date_injured=date_injured,
+                    is_active=is_active,
+                    notes=notes,
+                )
                 logger.info(f"Created new injury: {new_injury}")
 
                 # Add injury to user's profile
+                if not isinstance(user.injuries, list):
+                    user.injuries = []
                 user.injuries.append(new_injury)
 
                 # Save changes
                 update_doc = user.model_dump()
                 update_doc["_rev"] = user_doc["_rev"]
-                db.save_document(update_doc, doc_id=user_state["id"])
+                db.save_document(update_doc, doc_id=user_id)
                 logger.info("Successfully saved injury to user profile")
 
                 return gr.update(value="Injury added successfully")
@@ -339,7 +377,12 @@ def profile_view(state):
 
             try:
                 # Get current user document
-                user_doc = db.get_document(user_state["id"])
+                user_id = (
+                    user_state.value["id"]
+                    if hasattr(user_state, "value")
+                    else user_state["id"]
+                )
+                user_doc = db.get_document(user_id)
                 if not user_doc:
                     return gr.update(value="Error: User profile not found")
 
@@ -356,7 +399,7 @@ def profile_view(state):
                 # Save changes
                 update_doc = user.model_dump()
                 update_doc["_rev"] = user_doc["_rev"]
-                db.save_document(update_doc, doc_id=user_state["id"])
+                db.save_document(update_doc, doc_id=user_id)
                 logger.info(f"Successfully toggled injury {injury_index} active status")
 
                 return gr.update(value="Injury status updated successfully")
@@ -373,7 +416,12 @@ def profile_view(state):
 
             try:
                 # Get current user document
-                user_doc = db.get_document(user_state["id"])
+                user_id = (
+                    user_state.value["id"]
+                    if hasattr(user_state, "value")
+                    else user_state["id"]
+                )
+                user_doc = db.get_document(user_id)
                 if not user_doc:
                     return gr.update(value="Error: User profile not found")
 
@@ -390,7 +438,7 @@ def profile_view(state):
                 # Save changes
                 update_doc = user.model_dump()
                 update_doc["_rev"] = user_doc["_rev"]
-                db.save_document(update_doc, doc_id=user_state["id"])
+                db.save_document(update_doc, doc_id=user_id)
                 logger.info(f"Successfully deleted injury {injury_index}")
 
                 return gr.update(value="Injury deleted successfully")
@@ -474,8 +522,8 @@ def profile_view(state):
 
         # Connect injury action buttons
         toggle_active_btn.click(
-            fn=lambda x: toggle_injury_active(state["user_state"], x),
-            inputs=[injury_index],
+            fn=toggle_injury_active,
+            inputs=[state["user_state"], injury_index],
             outputs=[injuries_list],
         ).then(
             fn=lambda x: load_profile(x),
@@ -498,8 +546,8 @@ def profile_view(state):
         )
 
         delete_injury_btn.click(
-            fn=lambda x: delete_injury(state["user_state"], x),
-            inputs=[injury_index],
+            fn=delete_injury,
+            inputs=[state["user_state"], injury_index],
             outputs=[injuries_list],
         ).then(
             fn=lambda x: load_profile(x),
@@ -523,22 +571,22 @@ def profile_view(state):
 
         logger.info("Profile view setup complete")
 
-        return (
-            username,
-            email,
-            age,
-            sex,
-            height_feet,
-            height_inches,
-            weight_lbs,
-            experience,
-            goals,
-            workout_days,
-            workout_duration,
-            hevy_status,
-            injuries_list,
-            injury_index,
-            toggle_active_btn,
-            delete_injury_btn,
-            load_profile,
-        )
+        return {
+            "username": username,
+            "email": email,
+            "age": age,
+            "sex": sex,
+            "height_feet": height_feet,
+            "height_inches": height_inches,
+            "weight_lbs": weight_lbs,
+            "experience": experience,
+            "goals": goals,
+            "workout_days": workout_days,
+            "workout_duration": workout_duration,
+            "hevy_status": hevy_status,
+            "injuries_list": injuries_list,
+            "injury_index": injury_index,
+            "toggle_active_btn": toggle_active_btn,
+            "delete_injury_btn": delete_injury_btn,
+            "load_profile": load_profile,
+        }
