@@ -61,7 +61,7 @@ def setup_routes(app, state):
                 username = login_components[2]
                 password = login_components[3]
             with gr.Group(visible=False) as dashboard_block:
-                dashboard_components = dashboard_view()
+                dashboard_components = dashboard_view(state)
                 welcome_message = dashboard_components[0]
                 total_workouts = dashboard_components[1]
                 avg_workouts = dashboard_components[2]
@@ -69,10 +69,21 @@ def setup_routes(app, state):
                 workout_streak = dashboard_components[4]
                 goals_section = dashboard_components[5]
                 injuries_section = dashboard_components[6]
+                dashboard_load_btn = dashboard_components[7]
+                update_dashboard_fn = dashboard_components[8]
             with gr.Group(visible=False) as ai_recs_block:
-                ai_recs_view()
+                ai_recs_components = ai_recs_view(state)
+                profile_summary = ai_recs_components[0]
+                workout_summary = ai_recs_components[1]
+                exercises_summary = ai_recs_components[2]
+                routine_display = ai_recs_components[3]
+                save_status = ai_recs_components[4]
+                ai_recs_load_btn = ai_recs_components[5]
+                load_user_data_fn = ai_recs_components[6]
             with gr.Group(visible=False) as profile_block:
                 profile_components = profile_view(state)
+                profile_load_btn = profile_components["load_data_btn"]
+                profile_load_fn = profile_components["load_profile"]
 
         def handle_login(username, password):
             """Handle login attempt."""
@@ -156,9 +167,70 @@ def setup_routes(app, state):
                 *state["update_visibility"]("login")[6:],  # Update button variants
             )
 
+        # Set initial visibility when app loads
+        gr.on(
+            fn=lambda: state["update_nav_visibility"](None),
+            inputs=[],
+            outputs=[
+                register_btn,
+                login_btn,
+                dashboard_btn,
+                ai_recs_btn,
+                profile_btn,
+                logout_btn,
+            ],
+        )
+
+        # Update visibility and trigger data loading
+        def update_visibility_and_load(page=None):
+            logger.info(f"Updating visibility and loading data for page: {page}")
+            if page is None:
+                logger.info("No page specified, defaulting to login")
+                return state["update_visibility"]("login")  # Default to login page
+
+            logger.info("Updating visibility")
+            updates = state["update_visibility"](page)
+
+            # Get current user state
+            current_user_state = (
+                state["user_state"].value
+                if hasattr(state["user_state"], "value")
+                else state["user_state"]
+            )
+            logger.info(f"Current user state: {current_user_state}")
+
+            # Only attempt to load data if we have a valid user state
+            if current_user_state and current_user_state.get("id"):
+                if page == "dashboard":
+                    logger.info("Loading dashboard data")
+                    dashboard_updates = update_dashboard_fn(current_user_state)
+                    updates = list(updates)  # Convert tuple to list for modification
+                    updates[2:9] = (
+                        dashboard_updates  # Replace the dashboard component updates
+                    )
+                    updates = tuple(updates)  # Convert back to tuple
+                elif page == "ai_recs":
+                    logger.info("Loading AI RECs data")
+                    ai_recs_updates = load_user_data_fn(current_user_state)
+                    updates = list(updates)  # Convert tuple to list for modification
+                    updates[3:7] = (
+                        ai_recs_updates  # Replace the AI RECs component updates
+                    )
+                    updates = tuple(updates)  # Convert back to tuple
+                elif page == "profile":
+                    logger.info("Loading profile data")
+                    profile_updates = profile_load_fn(current_user_state)
+                    updates = list(updates)  # Convert tuple to list for modification
+                    updates[4:17] = (
+                        profile_updates  # Replace the profile component updates
+                    )
+                    updates = tuple(updates)  # Convert back to tuple
+
+            return updates
+
         # Connect navigation buttons
         register_btn.click(
-            fn=lambda: state["update_visibility"]("register"),
+            fn=lambda: update_visibility_and_load("register"),
             inputs=[],
             outputs=[
                 register_block,
@@ -175,7 +247,7 @@ def setup_routes(app, state):
             ],
         )
         login_btn.click(
-            fn=lambda: state["update_visibility"]("login"),
+            fn=lambda: update_visibility_and_load("login"),
             inputs=[],
             outputs=[
                 register_block,
@@ -192,7 +264,7 @@ def setup_routes(app, state):
             ],
         )
         dashboard_btn.click(
-            fn=lambda: state["update_visibility"]("dashboard"),
+            fn=lambda: update_visibility_and_load("dashboard"),
             inputs=[],
             outputs=[
                 register_block,
@@ -209,7 +281,7 @@ def setup_routes(app, state):
             ],
         )
         ai_recs_btn.click(
-            fn=lambda: state["update_visibility"]("ai_recs"),
+            fn=lambda: update_visibility_and_load("ai_recs"),
             inputs=[],
             outputs=[
                 register_block,
@@ -226,7 +298,7 @@ def setup_routes(app, state):
             ],
         )
         profile_btn.click(
-            fn=lambda: state["update_visibility"]("profile"),
+            fn=lambda: update_visibility_and_load("profile"),
             inputs=[],
             outputs=[
                 register_block,
@@ -302,7 +374,7 @@ def setup_routes(app, state):
             inputs=[state["user_state"]],
             outputs=[],
         ).then(
-            fn=state["update_visibility"],
+            fn=update_visibility_and_load,
             inputs=[state["current_page"]],
             outputs=[
                 register_block,
@@ -338,7 +410,7 @@ def setup_routes(app, state):
                 profile_btn,
             ],
         ).then(
-            fn=state["update_visibility"],
+            fn=update_visibility_and_load,
             inputs=[state["current_page"]],
             outputs=[
                 register_block,
@@ -352,21 +424,6 @@ def setup_routes(app, state):
                 dashboard_btn,
                 ai_recs_btn,
                 profile_btn,
-            ],
-        )
-
-        # Update dashboard when user state changes
-        state["user_state"].change(
-            fn=lambda x: dashboard_components[7](x),
-            inputs=[state["user_state"]],
-            outputs=[
-                welcome_message,
-                total_workouts,
-                avg_workouts,
-                last_workout,
-                workout_streak,
-                goals_section,
-                injuries_section,
             ],
         )
 
@@ -388,19 +445,5 @@ def setup_routes(app, state):
                 profile_components["workout_duration"],
                 profile_components["hevy_status"],
                 profile_components["injuries_list"],
-            ],
-        )
-
-        # Initial nav visibility update
-        app.load(
-            fn=lambda: state["update_nav_visibility"](None),
-            inputs=[],
-            outputs=[
-                register_btn,
-                login_btn,
-                dashboard_btn,
-                ai_recs_btn,
-                profile_btn,
-                logout_btn,
             ],
         )

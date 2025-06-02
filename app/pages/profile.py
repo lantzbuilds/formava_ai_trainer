@@ -154,6 +154,9 @@ def profile_view(state):
                         )
                         delete_injury_btn = gr.Button("Delete Injury", variant="stop")
 
+        # Add a hidden button for initial data loading
+        load_data_btn = gr.Button("Load Data", visible=False)
+
         def load_profile(user_state):
             """Load user profile data."""
             logger.info("Loading profile with user state")
@@ -658,7 +661,7 @@ def profile_view(state):
             return (*profile_updates, *hevy_updates)
 
         # Connect profile load event
-        gr.on(
+        load_data_btn.click(
             fn=on_profile_load,
             inputs=[state["user_state"]],
             outputs=[
@@ -823,5 +826,6 @@ def profile_view(state):
             "injury_index": injury_index,
             "toggle_active_btn": toggle_active_btn,
             "delete_injury_btn": delete_injury_btn,
+            "load_data_btn": load_data_btn,
             "load_profile": load_profile,
         }
