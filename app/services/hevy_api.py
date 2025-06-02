@@ -24,53 +24,121 @@ class HevyAPI:
             is_encrypted: Whether the API key is encrypted (default: True)
         """
         if is_encrypted:
+            logger.info("Decrypting API key")
             self.api_key = decrypt_api_key(api_key)
+            logger.info(f"Decrypted key format: {self.api_key[:5]}...")
+            logger.info(f"Decrypted key length: {len(self.api_key)}")
         else:
             self.api_key = api_key
+            logger.info(f"Using unencrypted key format: {self.api_key[:5]}...")
+            logger.info(f"Unencrypted key length: {len(self.api_key)}")
 
         if not self.api_key:
             raise ValueError("Invalid or missing Hevy API key")
 
         self.base_url = "https://api.hevyapp.com/v1"
         self.headers = {
-            "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
             "api-key": self.api_key,
         }
+        logger.info("Initialized Hevy API client with headers")
+        logger.info(
+            f"Request headers: {json.dumps({k: v[:5] + '...' if k == 'api-key' else v for k, v in self.headers.items()})}"
+        )
 
     def get_workouts(
         self, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None
-    ) -> List[Dict[str, Any]]:
+    ) -> List[Dict]:
         """
-        Get workouts from Hevy API.
+        Get workouts from Hevy API within a date range.
 
         Args:
-            start_date: Start date for workout range (default: 30 days ago)
-            end_date: End date for workout range (default: today)
+            start_date: Start date for the range (optional)
+            end_date: End date for the range (optional)
 
         Returns:
             List of workout dictionaries
         """
-        if not start_date:
-            start_date = datetime.now(timezone.utc) - timedelta(days=30)
-        if not end_date:
-            end_date = datetime.now(timezone.utc)
+        # Initialize variables for pagination
+        all_workouts = []
+        current_page = 1
+        page_size = 10  # Maximum allowed by API
+        total_pages = None
 
-        # Format dates for API
-        start_str = start_date.isoformat()
-        end_str = end_date.isoformat()
+        # Convert dates to ISO format if provided
+        start_str = start_date.isoformat() if start_date else None
+        end_str = end_date.isoformat() if end_date else None
 
-        # Make API request
-        url = f"{self.base_url}/workouts"
-        params = {"start_date": start_str, "end_date": end_str}
+        # Make API requests until we get all pages
+        while total_pages is None or current_page <= total_pages:
+            # Make API request
+            url = f"{self.base_url}/workouts"
+            params = {"page": current_page, "pageSize": page_size}
 
-        try:
-            response = requests.get(url, headers=self.headers, params=params)
-            response.raise_for_status()
-            return response.json().get("workouts", [])
-        except requests.exceptions.RequestException as e:
-            print(f"Error fetching workouts: {e}")
-            return []
+            try:
+                logger.info(f"Making request to {url} with params: {params}")
+                logger.info(
+                    f"Using headers: {json.dumps({k: v[:5] + '...' if k == 'api-key' else v for k, v in self.headers.items()})}"
+                )
+
+                response = requests.get(url, headers=self.headers, params=params)
+                logger.info(f"Response status code: {response.status_code}")
+                logger.info(f"Response headers: {dict(response.headers)}")
+
+                if response.status_code == 401:
+                    logger.error("Received 401 Unauthorized response")
+                    logger.error(f"Response body: {response.text}")
+                    logger.error(f"Request URL: {response.request.url}")
+                    logger.error(f"Request headers: {dict(response.request.headers)}")
+                    raise requests.exceptions.HTTPError(
+                        "401 Unauthorized: Invalid API key"
+                    )
+
+                response.raise_for_status()
+
+                # Parse response
+                response_data = response.json()
+                logger.info(f"Response data keys: {list(response_data.keys())}")
+                logger.info(
+                    f"Total workouts in response: {len(response_data.get('workouts', []))}"
+                )
+
+                # Get total pages from response if not set
+                if total_pages is None:
+                    total_pages = response_data.get("page_count", 1)
+                    logger.info(f"Total pages: {total_pages}")
+
+                # Get workouts from current page
+                page_workouts = response_data.get("workouts", [])
+
+                # Filter workouts by date range if dates are provided
+                if start_str and end_str:
+                    filtered_workouts = [
+                        workout
+                        for workout in page_workouts
+                        if start_str <= workout.get("start_time", "") <= end_str
+                    ]
+                    logger.info(
+                        f"Filtered {len(filtered_workouts)} workouts by date range"
+                    )
+                else:
+                    filtered_workouts = page_workouts
+
+                all_workouts.extend(filtered_workouts)
+                logger.info(f"Total workouts collected so far: {len(all_workouts)}")
+
+                # Move to next page
+                current_page += 1
+
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Error fetching workouts: {str(e)}")
+                if hasattr(e, "response"):
+                    logger.error(f"Response status: {e.response.status_code}")
+                    logger.error(f"Response headers: {dict(e.response.headers)}")
+                    logger.error(f"Response body: {e.response.text}")
+                raise
+
+        return all_workouts
 
     def get_workout_count(self) -> int:
         """

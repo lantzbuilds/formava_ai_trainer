@@ -954,3 +954,20 @@ class Database:
             logger.info("Exercises design document recreated successfully")
         except Exception as e:
             logger.error(f"Error recreating exercises design document: {str(e)}")
+
+    def save_user_workouts(self, user_id: str, workouts: list[dict]) -> list[str]:
+        """
+        Save multiple workouts for a user.
+
+        Args:
+            user_id: The user's ID to associate with each workout.
+            workouts: List of workout dicts to save.
+
+        Returns:
+            List of document IDs for the saved workouts.
+        """
+        doc_ids = []
+        for workout in workouts:
+            doc_id = self.save_workout(workout_data=workout, user_id=user_id)
+            doc_ids.append(doc_id)
+        return doc_ids

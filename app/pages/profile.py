@@ -4,12 +4,14 @@ Profile page for the AI Personal Trainer application.
 
 import logging
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import gradio as gr
+import requests
 
 from app.config.database import Database
 from app.models.user import FitnessGoal, Injury, InjurySeverity, Sex, UserProfile
+from app.services.hevy_api import HevyAPI
 from app.utils.crypto import encrypt_api_key
 from app.utils.units import cm_to_inches, kg_to_lbs
 
@@ -32,7 +34,11 @@ db = Database()
 def profile_view(state):
     """Display the profile page."""
     logger.info("Initializing profile view with state")
-    logger.info(f"User state in profile view: {getattr(state, 'value', state)}")
+    logger.info(f"User state in profile view: {state}")
+    logger.info(f"User state type: {type(state)}")
+    logger.info(
+        f"User state value: {state.value if hasattr(state, 'value') else state}"
+    )
 
     with gr.Column():
         gr.Markdown("## Profile")
@@ -91,6 +97,14 @@ def profile_view(state):
                 )
                 save_hevy_key = gr.Button("Save Hevy API Key")
 
+            # Add sync controls
+            with gr.Row():
+                sync_recent_btn = gr.Button(
+                    "Sync Recent Workouts (Last 30 Days)", interactive=False
+                )
+                sync_full_btn = gr.Button("Sync Full History", interactive=False)
+            sync_status = gr.Markdown("")
+
         # Injuries Section
         with gr.Group() as injuries_container:
             gr.Markdown("### Injuries")
@@ -142,10 +156,15 @@ def profile_view(state):
 
         def load_profile(user_state):
             """Load user profile data."""
-            logger.info("Initializing profile view with state")
-            logger.info(f"User state in profile view: {getattr(state, 'value', state)}")
+            logger.info("Loading profile with user state")
+            logger.info(f"User state type: {type(user_state)}")
+            logger.info(f"User state value: {user_state}")
+            logger.info(
+                f"User state value type: {type(user_state.value) if hasattr(user_state, 'value') else 'No value attribute'}"
+            )
 
             if not user_state:
+                logger.warning("No user state provided")
                 return (
                     gr.update(value="Please log in to view your profile"),
                     gr.update(value=""),
@@ -165,12 +184,15 @@ def profile_view(state):
             try:
                 # Get user profile
                 user_id = (
-                    user_state.value["id"]
+                    user_state.value.get("id")
                     if hasattr(user_state, "value")
-                    else user_state["id"]
+                    else user_state.get("id")
                 )
+                logger.info(f"Loading profile for user ID: {user_id}")
+
                 user_doc = db.get_document(user_id)
                 if not user_doc:
+                    logger.error(f"User document not found for ID: {user_id}")
                     return (
                         gr.update(value="Error: User profile not found"),
                         gr.update(value=""),
@@ -188,6 +210,7 @@ def profile_view(state):
                     )
 
                 user = UserProfile.from_dict(user_doc)
+                logger.info(f"Loaded profile for user: {user.username}")
 
                 # Convert height from cm to feet and inches
                 height_inches_total = cm_to_inches(user.height_cm)
@@ -197,28 +220,15 @@ def profile_view(state):
                 # Convert weight from kg to lbs
                 weight_lbs_val = kg_to_lbs(user.weight_kg)
 
-                # Log the value and type of user.injuries before checking if it is truthy
-                logger.info(f"user.injuries type: {type(user.injuries)}")
-                logger.info(f"user.injuries value: {user.injuries}")
-                if isinstance(user.injuries, list):
-                    logger.info(f"user.injuries length: {len(user.injuries)}")
                 # Format injuries list
                 injuries_text = "No injuries recorded"
                 if user.injuries:
                     injuries_text = "### Current Injuries\n"
                     for i, injury in enumerate(user.injuries, 1):
-                        # Debug logging
-                        # logger.info(f"Injury type: {type(injury)}")
-                        # logger.info(f"Injury attributes: {[attr for attr in dir(injury) if not attr.startswith('_')]}")
-                        # logger.info(f"Injury model_dump: {injury.model_dump() if hasattr(injury, 'model_dump') else 'No model_dump'}")
-                        # logger.info(f"Injury raw: {injury}")
-
-                        # Use object attribute access for injury fields
                         injuries_text += f"\n#### Injury {i}\n"
                         injuries_text += f"- **Description:** {injury.description}\n"
                         injuries_text += f"- **Body Part:** {injury.body_part}\n"
                         injuries_text += f"- **Severity:** {injury.severity.value}\n"
-                        # Handle date_injured as string or datetime
                         date_injured = injury.date_injured
                         if hasattr(date_injured, "strftime"):
                             date_str = date_injured.strftime("%Y-%m-%d")
@@ -272,16 +282,25 @@ def profile_view(state):
 
         def save_profile(user_state, hevy_api_key):
             """Save profile changes."""
+            logger.info("Saving profile with user state")
+            logger.info(f"User state type: {type(user_state)}")
+            logger.info(f"User state value: {user_state}")
+            logger.info(
+                f"User state value type: {type(user_state.value) if hasattr(user_state, 'value') else 'No value attribute'}"
+            )
+
             if not user_state:
                 return gr.update(value="Please log in to save changes")
 
             try:
                 # Get current user document
                 user_id = (
-                    user_state.value["id"]
+                    user_state.value.get("id")
                     if hasattr(user_state, "value")
-                    else user_state["id"]
+                    else user_state.get("id")
                 )
+                logger.info(f"Saving profile for user ID: {user_id}")
+
                 user_doc = db.get_document(user_id)
                 if not user_doc:
                     return gr.update(value="Error: User profile not found")
@@ -447,6 +466,168 @@ def profile_view(state):
                 logger.error(f"Error deleting injury: {str(e)}", exc_info=True)
                 return gr.update(value=f"Error deleting injury: {str(e)}")
 
+        def sync_workouts(user_state, sync_type="recent"):
+            """Sync workouts from Hevy API."""
+            if not user_state:
+                return gr.update(value="Please log in to sync workouts")
+
+            try:
+                # Get user profile
+                user_id = (
+                    user_state.value.get("id")
+                    if hasattr(user_state, "value")
+                    else user_state.get("id")
+                )
+                logger.info(f"Syncing workouts for user ID: {user_id}")
+
+                user_doc = db.get_document(user_id)
+                if not user_doc:
+                    return gr.update(value="Error: User profile not found")
+
+                user = UserProfile.from_dict(user_doc)
+                if not user.hevy_api_key:
+                    return gr.update(value="Please add your Hevy API key first")
+
+                # Log API key status (without exposing the actual key)
+                logger.info(
+                    f"User {user.username} has API key: {bool(user.hevy_api_key)}"
+                )
+                logger.info(
+                    f"API key length: {len(user.hevy_api_key) if user.hevy_api_key else 0}"
+                )
+                logger.info(f"API key last updated: {user.hevy_api_key_updated_at}")
+
+                # Initialize Hevy API
+                try:
+                    logger.info("Initializing Hevy API client with encrypted key")
+                    hevy_api = HevyAPI(api_key=user.hevy_api_key, is_encrypted=True)
+                    logger.info("Successfully initialized Hevy API client")
+
+                    # Test the API key with a simple request
+                    logger.info("Testing API key with a simple request")
+                    # Use a small date range for testing
+                    test_end_date = datetime.now(timezone.utc)
+                    test_start_date = test_end_date - timedelta(days=1)
+                    test_workouts = hevy_api.get_workouts(
+                        start_date=test_start_date, end_date=test_end_date
+                    )
+                    logger.info(
+                        f"Test request successful, found {len(test_workouts) if test_workouts else 0} workouts"
+                    )
+
+                except Exception as e:
+                    logger.error(f"Error initializing Hevy API client: {str(e)}")
+                    if hasattr(e, "response"):
+                        logger.error(f"Response status: {e.response.status_code}")
+                        logger.error(f"Response headers: {e.response.headers}")
+                        logger.error(f"Response body: {e.response.text}")
+                    return gr.update(value=f"Error initializing Hevy API: {str(e)}")
+
+                # Set date range based on sync type
+                end_date = datetime.now(timezone.utc)
+                if sync_type == "recent":
+                    start_date = end_date - timedelta(days=30)
+                    status_msg = "Syncing recent workouts (last 30 days)..."
+                else:  # full sync
+                    # Use a reasonable start date (e.g., 5 years ago)
+                    start_date = end_date - timedelta(days=365 * 5)
+                    status_msg = (
+                        "Syncing full workout history (this may take a while)..."
+                    )
+
+                logger.info(f"Starting {sync_type} sync for user {user.username}")
+                logger.info(f"Date range: {start_date} to {end_date}")
+
+                # Get workouts
+                try:
+                    all_workouts = hevy_api.get_workouts(
+                        start_date=start_date, end_date=end_date
+                    )
+                    logger.info(
+                        f"API call completed. Response type: {type(all_workouts)}"
+                    )
+                except Exception as e:
+                    logger.error(f"Error during API call: {str(e)}")
+                    if hasattr(e, "response"):
+                        logger.error(f"Response status: {e.response.status_code}")
+                        logger.error(f"Response body: {e.response.text}")
+                    return gr.update(value=f"Error fetching workouts: {str(e)}")
+
+                if all_workouts:
+                    logger.info(f"Found {len(all_workouts)} workouts to sync")
+                    db.save_user_workouts(user_id, all_workouts)
+                    logger.info(f"Successfully synced {len(all_workouts)} workouts")
+                    return gr.update(
+                        value=f"Successfully synced {len(all_workouts)} workouts"
+                    )
+                else:
+                    logger.info("No workouts found to sync")
+                    return gr.update(value="No workouts found to sync")
+
+            except Exception as e:
+                logger.error(f"Error syncing workouts: {str(e)}", exc_info=True)
+                return gr.update(value=f"Error syncing workouts: {str(e)}")
+
+        def update_hevy_status(user_state):
+            """Update Hevy API status and button states."""
+            logger.info("Updating Hevy status with user state")
+            logger.info(f"User state type: {type(user_state)}")
+            logger.info(f"User state value: {user_state}")
+            logger.info(
+                f"User state value type: {type(user_state.value) if hasattr(user_state, 'value') else 'No value attribute'}"
+            )
+
+            if not user_state:
+                return (
+                    gr.update(value="Please log in to view Hevy API status"),
+                    gr.update(interactive=False),
+                    gr.update(interactive=False),
+                )
+
+            try:
+                # Get user profile
+                user_id = (
+                    user_state.value.get("id")
+                    if hasattr(user_state, "value")
+                    else user_state.get("id")
+                )
+                logger.info(f"Updating Hevy status for user ID: {user_id}")
+
+                user_doc = db.get_document(user_id)
+                if not user_doc:
+                    return (
+                        gr.update(value="Error: User profile not found"),
+                        gr.update(interactive=False),
+                        gr.update(interactive=False),
+                    )
+
+                user = UserProfile.from_dict(user_doc)
+                has_api_key = bool(user.hevy_api_key)
+
+                if has_api_key:
+                    status_text = "Hevy API key is configured"
+                    if user.hevy_api_key_updated_at:
+                        status_text += f" (Last updated: {user.hevy_api_key_updated_at.strftime('%Y-%m-%d')})"
+                    return (
+                        gr.update(value=status_text),
+                        gr.update(interactive=True),
+                        gr.update(interactive=True),
+                    )
+                else:
+                    return (
+                        gr.update(value="Hevy API key is not configured"),
+                        gr.update(interactive=False),
+                        gr.update(interactive=False),
+                    )
+
+            except Exception as e:
+                logger.error(f"Error updating Hevy status: {str(e)}", exc_info=True)
+                return (
+                    gr.update(value=f"Error checking Hevy API status: {str(e)}"),
+                    gr.update(interactive=False),
+                    gr.update(interactive=False),
+                )
+
         # Setup event handlers
         logger.info("Setting up profile event handlers")
 
@@ -462,13 +643,23 @@ def profile_view(state):
                 logger.error(f"Error in handle_add_injury: {str(e)}", exc_info=True)
                 raise
 
-        logger.info("Setting up save Hevy key button click handler")
-        save_hevy_key.click(
-            fn=save_profile,
-            inputs=[state["user_state"], hevy_api_key],
-            outputs=[hevy_status],
-        ).then(
-            fn=lambda x: load_profile(x),
+        # Update Hevy status and button states when profile loads
+        def on_profile_load(user_state):
+            """Handle profile load and update Hevy status."""
+            logger.info("Profile load handler called")
+            logger.info(f"User state type: {type(user_state)}")
+            logger.info(f"User state value: {user_state}")
+            logger.info(
+                f"User state value type: {type(user_state.value) if hasattr(user_state, 'value') else 'No value attribute'}"
+            )
+
+            profile_updates = load_profile(user_state)
+            hevy_updates = update_hevy_status(user_state)
+            return (*profile_updates, *hevy_updates)
+
+        # Connect profile load event
+        gr.on(
+            fn=on_profile_load,
             inputs=[state["user_state"]],
             outputs=[
                 username,
@@ -484,6 +675,37 @@ def profile_view(state):
                 workout_duration,
                 hevy_status,
                 injuries_list,
+                hevy_status,  # Duplicate for Hevy status update
+                sync_recent_btn,
+                sync_full_btn,
+            ],
+        )
+
+        # Update Hevy status and button states after saving API key
+        save_hevy_key.click(
+            fn=save_profile,
+            inputs=[state["user_state"], hevy_api_key],
+            outputs=[hevy_status],
+        ).then(
+            fn=on_profile_load,
+            inputs=[state["user_state"]],
+            outputs=[
+                username,
+                email,
+                age,
+                sex,
+                height_feet,
+                height_inches,
+                weight_lbs,
+                experience,
+                goals,
+                workout_days,
+                workout_duration,
+                hevy_status,
+                injuries_list,
+                hevy_status,  # Duplicate for Hevy status update
+                sync_recent_btn,
+                sync_full_btn,
             ],
         )
 
@@ -567,6 +789,19 @@ def profile_view(state):
                 hevy_status,
                 injuries_list,
             ],
+        )
+
+        # Connect sync buttons
+        sync_recent_btn.click(
+            fn=lambda x: sync_workouts(x, "recent"),
+            inputs=[state["user_state"]],
+            outputs=[sync_status],
+        )
+
+        sync_full_btn.click(
+            fn=lambda x: sync_workouts(x, "full"),
+            inputs=[state["user_state"]],
+            outputs=[sync_status],
         )
 
         logger.info("Profile view setup complete")
