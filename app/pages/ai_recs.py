@@ -180,6 +180,7 @@ def ai_recs_view(state):
 
             try:
                 # Get user document
+                # TODO: Clean up all these "value" checks
                 user_id = (
                     user_state.value.get("id")
                     if hasattr(user_state, "value")

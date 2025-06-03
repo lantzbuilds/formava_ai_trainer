@@ -542,7 +542,8 @@ class Database:
             Document ID
         """
         try:
-            exercise_name = exercise_data.get("name", "Unknown")
+            logger.info(f"Saving exercise type: {type(exercise_data)}")
+            exercise_name = exercise_data.get("title", "Unknown")
             has_embedding = "embedding" in exercise_data
             logger.info(
                 f"Saving exercise: {exercise_name} (Has embedding: {has_embedding})"
@@ -808,8 +809,9 @@ class Database:
             exercises_with_embeddings = 0
             for exercise in exercises:
                 exercise_id = exercise.get("id")
+                exercise_title = exercise.get("title", "Unknown")
                 logger.info(
-                    f"Processing exercise: {exercise.get('name', 'Unknown')} (ID: {exercise_id})"
+                    f"Processing exercise: {exercise_title} (ID: {exercise_id})"
                 )
 
                 if exercise_id in existing_exercise_map:
@@ -820,21 +822,19 @@ class Database:
                             "embedding"
                         ]
                         logger.info(
-                            f"Reused existing embedding for exercise: {exercise.get('name', 'Unknown')}"
+                            f"Reused existing embedding for exercise: {exercise_title}"
                         )
                         # Save the exercise with the embedding
                         self.save_exercise(exercise)
                         exercises_with_embeddings += 1
                     else:
                         logger.info(
-                            f"No embedding found for existing exercise: {exercise.get('name', 'Unknown')}"
+                            f"No embedding found for existing exercise: {exercise_title}"
                         )
                         exercises_to_add.append(exercise)
                 else:
                     # New exercise, add to vector store
-                    logger.info(
-                        f"New exercise found: {exercise.get('name', 'Unknown')}"
-                    )
+                    logger.info(f"New exercise found: {exercise_title}")
                     exercises_to_add.append(exercise)
 
             logger.info(

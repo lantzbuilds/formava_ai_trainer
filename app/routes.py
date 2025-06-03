@@ -13,6 +13,7 @@ from app.pages.dashboard import dashboard_view
 from app.pages.login import login_view
 from app.pages.profile import profile_view
 from app.pages.register import register_view
+from app.services.sync import sync_hevy_data
 
 logger = logging.getLogger(__name__)
 db = Database()
@@ -141,6 +142,9 @@ def setup_routes(app, state):
                     f"Login successful for user: {username}, returning user state: {user}"
                 )
 
+                # Sync Hevy data
+                sync_hevy_data(user)
+
                 # Update navigation and redirect to dashboard
                 nav_updates = state["update_nav_visibility"](user)
                 logger.info(f"Updating navigation with user state: {user}")
@@ -169,6 +173,7 @@ def setup_routes(app, state):
                     "register",
                     *state["update_visibility"]("register")[6:],
                 )
+            sync_hevy_data(user)
             return (
                 user,  # Update user state
                 *state["update_nav_visibility"](user),  # Update nav visibility
