@@ -157,7 +157,7 @@ def profile_view(state):
         # Add a hidden button for initial data loading
         load_data_btn = gr.Button("Load Data", visible=False)
 
-        def load_profile(user_state):
+        def update_profile(user_state):
             """Load user profile data."""
             logger.info("Loading profile with user state")
             logger.info(f"User state type: {type(user_state)}")
@@ -656,7 +656,7 @@ def profile_view(state):
                 f"User state value type: {type(user_state.value) if hasattr(user_state, 'value') else 'No value attribute'}"
             )
 
-            profile_updates = load_profile(user_state)
+            profile_updates = update_profile(user_state)
             hevy_updates = update_hevy_status(user_state)
             return (*profile_updates, *hevy_updates)
 
@@ -726,7 +726,7 @@ def profile_view(state):
             ],
             outputs=[injuries_list],
         ).then(
-            fn=lambda x: load_profile(x),
+            fn=lambda x: update_profile(x),
             inputs=[state["user_state"]],
             outputs=[
                 username,
@@ -751,7 +751,7 @@ def profile_view(state):
             inputs=[state["user_state"], injury_index],
             outputs=[injuries_list],
         ).then(
-            fn=lambda x: load_profile(x),
+            fn=lambda x: update_profile(x),
             inputs=[state["user_state"]],
             outputs=[
                 username,
@@ -775,7 +775,7 @@ def profile_view(state):
             inputs=[state["user_state"], injury_index],
             outputs=[injuries_list],
         ).then(
-            fn=lambda x: load_profile(x),
+            fn=lambda x: update_profile(x),
             inputs=[state["user_state"]],
             outputs=[
                 username,
@@ -809,23 +809,20 @@ def profile_view(state):
 
         logger.info("Profile view setup complete")
 
-        return {
-            "username": username,
-            "email": email,
-            "age": age,
-            "sex": sex,
-            "height_feet": height_feet,
-            "height_inches": height_inches,
-            "weight_lbs": weight_lbs,
-            "experience": experience,
-            "goals": goals,
-            "workout_days": workout_days,
-            "workout_duration": workout_duration,
-            "hevy_status": hevy_status,
-            "injuries_list": injuries_list,
-            "injury_index": injury_index,
-            "toggle_active_btn": toggle_active_btn,
-            "delete_injury_btn": delete_injury_btn,
-            "load_data_btn": load_data_btn,
-            "load_profile": load_profile,
-        }
+        return (
+            username,
+            email,
+            age,
+            sex,
+            height_feet,
+            height_inches,
+            weight_lbs,
+            experience,
+            goals,
+            workout_days,
+            workout_duration,
+            hevy_status,
+            injuries_list,
+            load_data_btn,
+            update_profile,  # renamed from load_profile
+        )

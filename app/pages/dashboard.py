@@ -210,9 +210,7 @@ def dashboard_view(state):
         # Add logging to help debug state issues
         logger.info("Setting up dashboard event handlers")
         logger.info(f"User state type: {type(state['user_state'])}")
-        logger.info(
-            f"User state value: {state['user_state'].value if hasattr(state['user_state'], 'value') else state['user_state']}"
-        )
+        logger.info(f"User state value: {state['user_state']}")
 
         return (
             welcome_message,

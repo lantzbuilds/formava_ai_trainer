@@ -85,7 +85,7 @@ def ai_recs_view(state):
         # Add a hidden button for initial data loading
         load_data_btn = gr.Button("Load Data", visible=False)
 
-        def load_user_data(user_state):
+        def update_ai_recs(user_state):
             """Load and display user data."""
             if not user_state:
                 return (
@@ -165,7 +165,13 @@ def ai_recs_view(state):
             date_range = RoutineFolderBuilder.get_date_range("week")
             default_title = f"Auto Workout Plan - {date_range}"
 
-            return profile_text, workout_text, exercises_text, default_title
+            return (
+                profile_text,
+                workout_text,
+                exercises_text,
+                default_title,
+                gr.update(value=""),
+            )
 
         def generate_routine(user_state, split, period, cardio, title):
             """Generate workout routine."""
@@ -308,7 +314,7 @@ def ai_recs_view(state):
 
         # Load initial data when page is shown
         load_data_btn.click(
-            fn=load_user_data,
+            fn=update_ai_recs,
             inputs=[state["user_state"]],
             outputs=[
                 profile_summary,
@@ -325,5 +331,5 @@ def ai_recs_view(state):
             routine_display,
             save_status,
             load_data_btn,
-            load_user_data,
+            update_ai_recs,
         ]
