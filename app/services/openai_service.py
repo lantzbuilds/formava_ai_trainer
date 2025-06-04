@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional
 
@@ -303,10 +304,14 @@ class OpenAIService:
             Dictionary containing the generated routine
         """
         try:
-            # Search for relevant exercises
+            # Timing: Vector search
+            start_time = time.time()
             query = f"{focus} exercises for {context['user_profile']['experience_level']} level"
-            # TODO: can add equipment as filter_criteria to search_exercises
-            exercises = self.vector_store.search_exercises(query)
+            exercises = self.vector_store.search_exercises(
+                query, k=10
+            )  # Increase to 10 exercises
+            vector_search_time = time.time() - start_time
+            logger.info(f"Vector search took {vector_search_time:.2f} seconds")
 
             if not exercises:
                 logger.error(f"No exercises found for query: {query}")
@@ -314,19 +319,28 @@ class OpenAIService:
 
             logger.info(f"Found {len(exercises)} exercises for {focus} routine")
 
+            # Minimize exercise fields for the prompt
+            minimal_exercises = []
+            for ex in exercises:
+                minimal_exercises.append(
+                    {
+                        "exercise_template_id": ex.get("exercise_template_id")
+                        or ex.get("id"),
+                        "name": ex.get("name") or ex.get("title"),
+                        "muscle_groups": ex.get("muscle_groups", []),
+                    }
+                )
+
             # Create a mapping of exercise_template_id to exercise name
             exercise_names = {
-                ex.get("exercise_template_id")
-                or ex.get("id"): ex.get("name")
-                or ex.get("title")
-                for ex in exercises
+                ex["exercise_template_id"]: ex["name"] for ex in minimal_exercises
             }
 
             # Ensure we have enough unique exercises
             unique_exercises = []
             seen_names = set()
-            for exercise in exercises:
-                name = exercise.get("name") or exercise.get("title")
+            for exercise in minimal_exercises:
+                name = exercise.get("name")
                 if name and name not in seen_names:
                     unique_exercises.append(exercise)
                     seen_names.add(name)
@@ -350,27 +364,50 @@ class OpenAIService:
                 similar_workouts = []
                 logger.warning("No user ID provided, skipping workout history search")
 
-            # Create the prompt for OpenAI
+            # Timing: Prompt construction
+            start_time = time.time()
             prompt = self._create_routine_prompt(
                 day=day,
                 focus=focus,
-                exercises=unique_exercises,
+                exercises=unique_exercises,  # Only minimal fields sent
                 context=context,
                 include_cardio=include_cardio,
                 similar_workouts=similar_workouts,
             )
+            prompt_construction_time = time.time() - start_time
+            logger.info(
+                f"Prompt construction took {prompt_construction_time:.2f} seconds"
+            )
 
-            # Call OpenAI API
+            # Log prompt size
+            logger.info(f"Prompt length: {len(prompt)} characters")
+            try:
+                import tiktoken
+
+                enc = tiktoken.encoding_for_model("gpt-4-turbo")
+                logger.info(f"Prompt tokens: {len(enc.encode(prompt))}")
+            except ImportError:
+                logger.info("tiktoken not installed, skipping token count.")
+            except Exception as e:
+                logger.warning(f"Error counting prompt tokens: {e}")
+
+            # Timing: OpenAI API call
+            start_time = time.time()
             response = self.client.chat.completions.create(
-                model="gpt-4-turbo-preview",
+                model="gpt-3.5-turbo",
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
                 temperature=0.7,
             )
+            openai_api_time = time.time() - start_time
+            logger.info(f"OpenAI API call took {openai_api_time:.2f} seconds")
 
-            # Parse the response
+            # Timing: Post-processing
+            start_time = time.time()
             try:
                 routine_json = json.loads(response.choices[0].message.content)
+                post_processing_time = time.time() - start_time
+                logger.info(f"Post-processing took {post_processing_time:.2f} seconds")
                 logger.info("Generated routine JSON:")
                 logger.info(json.dumps(routine_json, indent=2))
 
