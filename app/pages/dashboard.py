@@ -7,7 +7,6 @@ from app.config.database import Database
 from app.models.user import UserProfile
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize database connection
@@ -109,9 +108,9 @@ def dashboard_view(state):
                 # Get workout stats
                 now = datetime.now(timezone.utc)
                 thirty_days_ago = now - timedelta(days=30)
-                stats = db.get_workout_stats(thirty_days_ago, now)
+                stats = db.get_workout_stats(user_id, thirty_days_ago, now)
 
-                # The stats view now returns a single aggregated result
+                # The stats view now returns a single aggregated result per user
                 if stats and len(stats) > 0:
                     stats_data = stats[0]  # Get the first (and only) result
                     total_workouts_count = stats_data.get("total_workouts", 0)
@@ -119,14 +118,10 @@ def dashboard_view(state):
                         total_workouts_count / 4
                     )  # Approximate for 30 days
 
-                    # Get last workout from the stats
-                    last_workout_info = stats_data.get("last_workout", {})
-                    last_workout_date = (
-                        last_workout_info.get("date") if last_workout_info else None
-                    )
+                    last_workout_date = stats_data.get("last_workout_date")
                 else:
                     total_workouts_count = 0
-                    avg_workouts_per_week = 0
+                    avg_workouts_per_week = 0.0
                     last_workout_date = None
 
                 # Calculate streak
