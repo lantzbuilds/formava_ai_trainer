@@ -128,9 +128,16 @@ def dashboard_view(state):
                 streak = 0
                 current_date = now.date()
                 while True:
+                    day_start = datetime.combine(
+                        current_date, datetime.min.time(), tzinfo=timezone.utc
+                    )
+                    day_end = datetime.combine(
+                        current_date, datetime.max.time(), tzinfo=timezone.utc
+                    )
                     date_stats = db.get_workout_stats(
-                        datetime.combine(current_date, datetime.min.time()),
-                        datetime.combine(current_date, datetime.max.time()),
+                        user_id,
+                        day_start,
+                        day_end,
                     )
                     if not date_stats or not any(
                         stat.get("total_workouts", 0) > 0 for stat in date_stats

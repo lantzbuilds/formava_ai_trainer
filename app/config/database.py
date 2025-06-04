@@ -393,12 +393,19 @@ class Database:
         self, user_id: str, start_date: datetime = None, end_date: datetime = None
     ):
         """Get workout statistics for a user, optionally filtered by date range."""
+
+        # Helper to convert to isoformat if needed
+        def to_iso(val):
+            if isinstance(val, datetime):
+                return val.isoformat()
+            return val
+
         if start_date and end_date:
             result = list(
                 self.db.view(
                     "workouts/stats",
-                    startkey=[user_id, start_date.isoformat()],
-                    endkey=[user_id, end_date.isoformat()],
+                    startkey=[user_id, to_iso(start_date)],
+                    endkey=[user_id, to_iso(end_date)],
                     reduce=True,
                     group_level=1,
                 )
