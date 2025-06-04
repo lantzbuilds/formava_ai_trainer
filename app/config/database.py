@@ -562,12 +562,12 @@ class Database:
             Document ID
         """
         try:
-            logger.info(f"Saving exercise type: {type(exercise_data)}")
+            # logger.info(f"Saving exercise type: {type(exercise_data)}")
             exercise_name = exercise_data.get("title", "Unknown")
             has_embedding = "embedding" in exercise_data
-            logger.info(
-                f"Saving exercise: {exercise_name} (Has embedding: {has_embedding})"
-            )
+            # logger.info(
+            #     f"Saving exercise: {exercise_name} (Has embedding: {has_embedding})"
+            # )
 
             # Check if exercise already exists by hevy_id
             if "hevy_id" in exercise_data:
@@ -576,9 +576,9 @@ class Database:
                     # Update existing exercise
                     exercise_data["_id"] = existing["_id"]
                     exercise_data["_rev"] = existing["_rev"]
-                    logger.info(
-                        f"Updating existing exercise: {exercise_name} (ID: {existing['_id']})"
-                    )
+                    # logger.info(
+                    #     f"Updating existing exercise: {exercise_name} (ID: {existing['_id']})"
+                    # )
 
                     # Check if we're preserving the embedding
                     if has_embedding and "embedding" not in existing:
@@ -597,9 +597,9 @@ class Database:
 
             # Save to database
             doc_id, _ = self.db.save(exercise_data)
-            logger.info(
-                f"Saved exercise with ID: {doc_id} (Has embedding: {'embedding' in exercise_data})"
-            )
+            # logger.info(
+            #     f"Saved exercise with ID: {doc_id} (Has embedding: {'embedding' in exercise_data})"
+            # )
             return doc_id
         except Exception as e:
             logger.error(f"Error saving exercise: {str(e)}")
@@ -685,24 +685,24 @@ class Database:
         """
         try:
             # Log the arguments being passed
-            logger.info(
-                f"save_workout called with doc_id: {doc_id}, user_id: {user_id}"
-            )
-            logger.info(f"Workout data keys: {list(workout_data.keys())}")
+            # logger.info(
+            #     # f"save_workout called with doc_id: {doc_id}, user_id: {user_id}"
+            # )
+            # logger.info(f"Workout data keys: {list(workout_data.keys())}")
 
             # Set the document type
             workout_data["type"] = "workout"
-            logger.info(f"Set workout type to: workout")
+            # logger.info(f"Set workout type to: workout")
 
             # Set the user_id if provided
             if user_id:
                 workout_data["user_id"] = user_id
-                logger.info(f"Set workout user_id to: {user_id}")
+                # logger.info(f"Set workout user_id to: {user_id}")
 
             # Set the document ID if provided
             if doc_id:
                 workout_data["_id"] = doc_id
-                logger.info(f"Set workout _id to: {doc_id}")
+                # logger.info(f"Set workout _id to: {doc_id}")
 
             # Check if workout already exists by hevy_id
             elif "hevy_id" in workout_data:
@@ -711,7 +711,7 @@ class Database:
                     # Update existing workout
                     workout_data["_id"] = existing["_id"]
                     workout_data["_rev"] = existing["_rev"]
-                    logger.info(f"Updating existing workout with ID: {existing['_id']}")
+                    # logger.info(f"Updating existing workout with ID: {existing['_id']}")
 
             # Ensure exercise_count is set
             if "exercise_count" not in workout_data and "exercises" in workout_data:
@@ -830,9 +830,9 @@ class Database:
             for exercise in exercises:
                 exercise_id = exercise.get("id")
                 exercise_title = exercise.get("title", "Unknown")
-                logger.info(
-                    f"Processing exercise: {exercise_title} (ID: {exercise_id})"
-                )
+                # logger.info(
+                #     # f"Processing exercise: {exercise_title} (ID: {exercise_id})"
+                # )
 
                 if exercise_id in existing_exercise_map:
                     # Check if the existing exercise has an embedding
@@ -841,9 +841,9 @@ class Database:
                         exercise["embedding"] = existing_exercise_map[exercise_id][
                             "embedding"
                         ]
-                        logger.info(
-                            f"Reused existing embedding for exercise: {exercise_title}"
-                        )
+                        # logger.info(
+                        #     # f"Reused existing embedding for exercise: {exercise_title}"
+                        # )
                         # Save the exercise with the embedding
                         self.save_exercise(exercise)
                         exercises_with_embeddings += 1

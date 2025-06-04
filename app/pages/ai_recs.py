@@ -104,12 +104,14 @@ def ai_recs_view(state):
 
         def update_ai_recs(user_state):
             """Load and display user data."""
+            logger.info(f"Updating AI Recs")
             if not user_state:
                 return (
                     "Please log in to view recommendations.",
                     "Please log in to view workout history.",
                     "Please log in to view available exercises.",
                     "Auto Workout Plan - Next Week",
+                    "",
                 )
 
             # Get user document from database
@@ -118,21 +120,25 @@ def ai_recs_view(state):
                 if hasattr(user_state, "value")
                 else user_state.get("id")
             )
+            logger.info(f"User ID: {user_id}")
             if not user_id:
                 return (
                     "User ID not found in state",
                     "User ID not found in state",
                     "User ID not found in state",
                     "Auto Workout Plan - Next Week",
+                    "",
                 )
 
             user_doc = db.get_document(user_id)
+            logger.info(f"User doc: {user_doc}")
             if not user_doc:
                 return (
                     "User profile not found",
                     "User profile not found",
                     "User profile not found",
                     "Auto Workout Plan - Next Week",
+                    "",
                 )
 
             # Create UserProfile instance
@@ -187,7 +193,7 @@ def ai_recs_view(state):
                 workout_text,
                 exercises_text,
                 default_title,
-                # gr.update(value=""),
+                "",
             )
 
         def generate_routine(user_state, split, period, cardio, title):
@@ -342,6 +348,7 @@ def ai_recs_view(state):
                 workout_summary,
                 exercises_summary,
                 title,
+                save_status,
             ],
         )
 
