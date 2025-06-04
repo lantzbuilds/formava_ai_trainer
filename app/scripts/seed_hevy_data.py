@@ -21,7 +21,6 @@ from services.hevy_api import HevyAPI
 from utils.crypto import encrypt_api_key
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 

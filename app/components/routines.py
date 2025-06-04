@@ -8,15 +8,13 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 import streamlit as st
-from pydantic import BaseModel
-
 from config.database import Database
 from models.user import UserProfile
+from pydantic import BaseModel
 from services.hevy_api import HevyAPI
 from services.openai_service import OpenAIService
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize services

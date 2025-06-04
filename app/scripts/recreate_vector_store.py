@@ -11,7 +11,6 @@ from config.database import Database
 from services.vector_store import ExerciseVectorStore
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 

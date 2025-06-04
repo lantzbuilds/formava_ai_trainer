@@ -10,9 +10,6 @@ sys.path.append(app_dir)
 from config.database import Database
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
 logger = logging.getLogger(__name__)
 
 
