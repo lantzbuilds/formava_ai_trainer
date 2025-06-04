@@ -187,7 +187,7 @@ def ai_recs_view(state):
                 workout_text,
                 exercises_text,
                 default_title,
-                gr.update(value=""),
+                # gr.update(value=""),
             )
 
         def generate_routine(user_state, split, period, cardio, title):
