@@ -10,14 +10,12 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, List
 
 import requests
-
 from config.database import Database
 from models.user import UserProfile
 from services.hevy_api import HevyAPI
 from services.vector_store import ExerciseVectorStore
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 

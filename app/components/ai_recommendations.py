@@ -7,7 +7,6 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 import streamlit as st
-
 from config.database import Database
 from models.user import UserProfile
 from services.hevy_api import HevyAPI
@@ -17,7 +16,6 @@ from services.vector_store import ExerciseVectorStore
 from utils.formatters import format_routine_markdown
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize services

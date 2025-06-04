@@ -12,7 +12,6 @@ from models.user import UserProfile
 from services.hevy_api import HevyAPI
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 

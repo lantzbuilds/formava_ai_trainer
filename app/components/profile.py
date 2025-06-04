@@ -6,14 +6,12 @@ import logging
 from datetime import datetime, timezone
 
 import streamlit as st
-
 from config.database import Database
 from models.user import FitnessGoal, InjurySeverity, Sex, UserProfile
 from utils.crypto import decrypt_api_key, encrypt_api_key
 from utils.units import cm_to_inches, kg_to_lbs
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize database connection

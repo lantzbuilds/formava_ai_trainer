@@ -6,7 +6,6 @@ import logging
 from datetime import datetime, timezone
 
 import streamlit as st
-
 from config.config import HEVY_API_KEY
 from config.database import Database
 from models.user import FitnessGoal, InjurySeverity, Sex, UserProfile
@@ -14,7 +13,6 @@ from utils.crypto import encrypt_api_key
 from utils.units import inches_to_cm, lbs_to_kg
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize database connection
