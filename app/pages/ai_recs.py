@@ -65,10 +65,13 @@ def ai_recs_view(state):
                     info="Include cardio exercises in the generated routines",
                 )
 
-            routine_title = gr.Textbox(
+            title = gr.Textbox(
                 label="Routine Folder Title",
                 info="Edit the title for your workout routine folder",
             )
+            routine_title = "Auto Workout Plan - Next Week"
+            if hasattr(title, "value"):
+                routine_title = title.value
 
             generate_btn = gr.Button("Generate Recommendations")
 
@@ -304,7 +307,7 @@ def ai_recs_view(state):
                 split_type,
                 period,
                 include_cardio,
-                routine_title,
+                title,
             ],
             outputs=routine_display,
         )
@@ -321,7 +324,7 @@ def ai_recs_view(state):
                 profile_summary,
                 workout_summary,
                 exercises_summary,
-                routine_title,
+                title,
             ],
         )
 

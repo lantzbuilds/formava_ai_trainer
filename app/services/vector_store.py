@@ -272,6 +272,11 @@ class ExerciseVectorStore:
             exercises = []
             for doc, score in results:
                 try:
+                    # Defensive logging
+                    logger.info(f"doc type: {type(doc)}")
+                    logger.info(f"doc.metadata type: {type(doc.metadata)}")
+                    logger.info(f"doc.metadata keys: {list(doc.metadata.keys())}")
+
                     # Parse muscle groups from metadata
                     primary_muscles_str = doc.metadata.get("primary_muscles", "")
                     secondary_muscles_str = doc.metadata.get("secondary_muscles", "")
@@ -299,12 +304,18 @@ class ExerciseVectorStore:
 
                     exercise = {
                         "id": doc.metadata.get("id"),
+                        "exercise_template_id": doc.metadata.get(
+                            "exercise_template_id"
+                        ),
                         "title": doc.metadata.get("title"),
+                        "name": doc.metadata.get("name") or doc.metadata.get("title"),
                         "description": doc.metadata.get("description"),
                         "muscle_groups": muscle_groups,
                         "equipment": equipment,
                         "similarity_score": score,
                     }
+                    logger.info(f"Constructed exercise dict: {exercise}")
+
                     exercises.append(exercise)
 
                     logger.info(f"Found exercise: {exercise['title']} (score: {score})")

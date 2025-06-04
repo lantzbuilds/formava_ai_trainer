@@ -175,6 +175,7 @@ class OpenAIService:
         fitness_goals = user_profile["fitness_goals"]
         injuries = user_profile.get("injuries", [])
         preferred_duration = user_profile.get("preferred_workout_duration", 60)
+        split_type = context.get("generation_preferences", {}).get("split_type", "auto")
 
         # Format injuries for the prompt
         injury_text = (
@@ -196,6 +197,9 @@ class OpenAIService:
             for workout in similar_workouts:
                 workout_history_text += f"- {workout['title']} ({workout['start_time']}): {workout['exercise_count']} exercises\n"
 
+        # Add split type to user profile
+        split_text = f"- Workout Split Type: {split_type}" if split_type else ""
+
         # Create the prompt
         prompt = f"""
         Create a {focus} workout routine for {day} that is appropriate for a {experience_level} level user.
@@ -205,6 +209,7 @@ class OpenAIService:
         - Fitness Goals: {', '.join(fitness_goals)}
         - Active Injuries: {injury_text}
         - Preferred Workout Duration: {preferred_duration} minutes
+        {split_text}
         {workout_history_text}
         
         Available Exercises:
@@ -217,7 +222,8 @@ class OpenAIService:
         4. Includes appropriate rest periods
         5. Stays within the preferred workout duration
         6. Builds upon the user's previous workout patterns
-        {f"7. Includes {preferred_duration // 10} minutes of cardio" if include_cardio else ""}
+        7. Follows a {split_type} split for this day (if applicable)
+        {f"8. Includes at least {preferred_duration // 10} minutes of cardio, using appropriate exercises from the list above, if possible." if include_cardio else ""}
         
         Return the response in JSON format that matches the Hevy API requirements:
         {{
@@ -270,7 +276,7 @@ class OpenAIService:
         - For endurance-focused exercises, use 2-3 sets of 12-15+ reps
         - Cardio exercises should specify either duration_seconds or distance_meters
         - Bodyweight exercises should still specify weight_kg as 0
-
+        
         Superset Guidelines:
         - Use supersets to pair complementary exercises (e.g., push/pull, agonist/antagonist)
         - Assign the same superset_id number to exercises that should be performed together
@@ -310,16 +316,20 @@ class OpenAIService:
 
             # Create a mapping of exercise_template_id to exercise name
             exercise_names = {
-                ex["exercise_template_id"]: ex["name"] for ex in exercises
+                ex.get("exercise_template_id")
+                or ex.get("id"): ex.get("name")
+                or ex.get("title")
+                for ex in exercises
             }
 
             # Ensure we have enough unique exercises
             unique_exercises = []
             seen_names = set()
             for exercise in exercises:
-                if exercise["name"] not in seen_names:
+                name = exercise.get("name") or exercise.get("title")
+                if name and name not in seen_names:
                     unique_exercises.append(exercise)
-                    seen_names.add(exercise["name"])
+                    seen_names.add(name)
                     if len(unique_exercises) >= 10:  # Limit to 10 exercises
                         break
 
@@ -370,6 +380,21 @@ class OpenAIService:
                         exercise_id = exercise.get("exercise_template_id")
                         if exercise_id in exercise_names:
                             exercise["name"] = exercise_names[exercise_id]
+                        else:
+                            # Fallback: try to look up in the vector store
+                            exercise["name"] = (
+                                self._lookup_exercise_name(exercise_id)
+                                or "Unknown Exercise"
+                            )
+                            logger.warning(
+                                f"Exercise name not found for ID {exercise_id}, using fallback."
+                            )
+                    # Log any exercises still missing a name
+                    for exercise in routine_json["hevy_api"]["routine"]["exercises"]:
+                        if "name" not in exercise:
+                            logger.error(
+                                f"Exercise missing name after all lookups: {exercise}"
+                            )
 
                 return routine_json
             except json.JSONDecodeError as e:
@@ -380,6 +405,13 @@ class OpenAIService:
         except Exception as e:
             logger.error(f"Error generating routine: {str(e)}")
             return None
+
+    def _lookup_exercise_name(self, exercise_id):
+        """Lookup an exercise name by its template ID using the vector store."""
+        exercise = self.vector_store.get_exercise_by_id(exercise_id)
+        if exercise:
+            return exercise.get("title") or exercise.get("name")
+        return None
 
     def _get_date_range(self, period: Literal["week", "month"]) -> str:
         """

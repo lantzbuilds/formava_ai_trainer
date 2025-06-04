@@ -1,3 +1,6 @@
+import logging
+
+
 def format_routine_markdown(routine: dict) -> str:
     """Format a workout routine in a readable markdown format.
 
@@ -7,19 +10,30 @@ def format_routine_markdown(routine: dict) -> str:
     Returns:
         Formatted markdown string
     """
+    logger = logging.getLogger(__name__)
+    # Log the keys present in the routine data
+    logger.info(f"Routine data keys: {list(routine.keys())}")
+
     if not routine or "hevy_api" not in routine or "routine" not in routine["hevy_api"]:
         return "Invalid routine format"
 
     routine_data = routine["hevy_api"]["routine"]
 
     # Start with the routine name and description
-    markdown = f"## {routine_data['name']}\n\n"
+    routine_name = (
+        routine_data.get("name") or routine_data.get("title") or "Untitled Routine"
+    )
+    markdown = f"## {routine_name}\n\n"
     if "notes" in routine_data and routine_data["notes"]:
         markdown += f"*{routine_data['notes']}*\n\n"
 
     # Add each exercise
     for exercise in routine_data.get("exercises", []):
-        markdown += f"### {exercise['name']}\n"
+        logger.info(f"Exercise keys: {list(exercise.keys())}")
+        exercise_name = (
+            exercise.get("name") or exercise.get("title") or "Unknown Exercise"
+        )
+        markdown += f"### {exercise_name}\n"
 
         # Add exercise description if available
         if "exercise_description" in exercise and exercise["exercise_description"]:
