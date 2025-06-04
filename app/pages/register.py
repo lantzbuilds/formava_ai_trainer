@@ -10,7 +10,6 @@ from app.utils.crypto import encrypt_api_key
 from app.utils.units import inches_to_cm, lbs_to_kg
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize database connection

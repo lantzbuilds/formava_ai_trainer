@@ -16,13 +16,8 @@ from app.utils.crypto import encrypt_api_key
 from app.utils.units import cm_to_inches, kg_to_lbs
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    stream=sys.stdout,
-)
+
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 # Add a test log message
 logger.info("Profile module loaded")

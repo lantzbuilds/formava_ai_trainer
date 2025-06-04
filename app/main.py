@@ -2,6 +2,7 @@
 Main application entry point for the AI Personal Trainer.
 """
 
+# Configure logging
 import logging
 import os
 from datetime import datetime, timedelta, timezone
@@ -31,11 +32,32 @@ from app.utils.units import (
     lbs_to_kg,
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# Console handler
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_formatter = logging.Formatter("%(levelname)s:%(name)s:%(message)s")
+console_handler.setFormatter(console_formatter)
+
+# File handler
+file_handler = logging.FileHandler("app.log", mode="a")
+file_handler.setLevel(logging.INFO)
+file_formatter = logging.Formatter("%(asctime)s %(levelname)s:%(name)s:%(message)s")
+file_handler.setFormatter(file_formatter)
+
+# Add handlers (avoid duplicates)
+if not logger.hasHandlers():
+    logger.addHandler(console_handler)
+    logger.addHandler(file_handler)
+else:
+    # Prevent adding multiple handlers if this code runs more than once
+    handler_types = [type(h) for h in logger.handlers]
+    if logging.StreamHandler not in handler_types:
+        logger.addHandler(console_handler)
+    if logging.FileHandler not in handler_types:
+        logger.addHandler(file_handler)
 
 favicon_path = os.path.abspath("app/static/images/favicon.ico")
 

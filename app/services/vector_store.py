@@ -20,7 +20,6 @@ from app.config.database import Database
 from app.models.exercise import Exercise, ExerciseList
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 

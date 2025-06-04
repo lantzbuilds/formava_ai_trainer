@@ -12,7 +12,6 @@ from app.config.config import COUCHDB_DB, COUCHDB_PASSWORD, COUCHDB_URL, COUCHDB
 from .views import create_user_views, create_workout_views
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Log imported values
@@ -390,18 +389,32 @@ class Database:
             )
         ]
 
-    def get_workout_stats(self, start_date: datetime = None, end_date: datetime = None):
-        """Get workout statistics, optionally filtered by date range."""
+    def get_workout_stats(
+        self, user_id: str, start_date: datetime = None, end_date: datetime = None
+    ):
+        """Get workout statistics for a user, optionally filtered by date range."""
         if start_date and end_date:
-            return [
-                row.value
-                for row in self.db.view(
+            result = list(
+                self.db.view(
                     "workouts/stats",
-                    startkey=start_date.isoformat(),
-                    endkey=end_date.isoformat(),
+                    startkey=[user_id, start_date.isoformat()],
+                    endkey=[user_id, end_date.isoformat()],
+                    reduce=True,
+                    group_level=1,
                 )
-            ]
-        return [row.value for row in self.db.view("workouts/stats")]
+            )
+            return [row.value for row in result]
+        # If no date range, get all stats for the user
+        result = list(
+            self.db.view(
+                "workouts/stats",
+                startkey=[user_id],
+                endkey=[user_id, {}],
+                reduce=True,
+                group_level=1,
+            )
+        )
+        return [row.value for row in result]
 
     def get_workout_progression(self, exercise_template_id: str):
         """Get progression data for a specific exercise."""

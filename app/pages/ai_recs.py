@@ -12,7 +12,6 @@ from app.services.vector_store import ExerciseVectorStore
 from app.utils.formatters import format_routine_markdown
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize services
