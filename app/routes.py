@@ -3,6 +3,7 @@ Route configuration for the AI Personal Trainer application.
 """
 
 import logging
+import threading
 
 import gradio as gr
 
@@ -143,7 +144,9 @@ def setup_routes(app, state):
                 )
 
                 # Sync Hevy data
-                sync_hevy_data(user)
+                threading.Thread(
+                    target=sync_hevy_data, args=(user,), daemon=True
+                ).start()
 
                 # Update navigation and redirect to dashboard
                 nav_updates = state["update_nav_visibility"](user)
@@ -173,7 +176,7 @@ def setup_routes(app, state):
                     "register",
                     *state["update_visibility"]("register")[6:],
                 )
-            sync_hevy_data(user)
+            threading.Thread(target=sync_hevy_data, args=(user,), daemon=True).start()
             return (
                 user,  # Update user state
                 *state["update_nav_visibility"](user),  # Update nav visibility
