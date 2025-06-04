@@ -20,6 +20,19 @@ db = Database()
 openai_service = OpenAIService()
 vector_store = ExerciseVectorStore()
 
+split_type_labels = {
+    "auto": "Auto",
+    "full_body": "Full Body",
+    "upper_lower": "Upper/Lower",
+    "push_pull": "Push/Pull",
+}
+
+
+def get_default_title(split_type, period):
+    split_label = split_type_labels.get(split_type, split_type.title())
+    date_range = RoutineFolderBuilder.get_date_range(period)
+    return f"{split_label} - {date_range}"
+
 
 def ai_recs_view(state):
     """Display the AI recommendations page."""
@@ -51,12 +64,14 @@ def ai_recs_view(state):
                     choices=["auto", "full_body", "upper_lower", "push_pull"],
                     label="Workout Split Type",
                     info="Choose how to split your workouts. 'auto' will determine based on your experience level and days per week.",
+                    value="auto",
                 )
 
                 period = gr.Dropdown(
                     choices=["week", "month"],
                     label="Time Period",
                     info="Generate routines for the upcoming week or month",
+                    value="week",
                 )
 
                 include_cardio = gr.Checkbox(
@@ -65,13 +80,13 @@ def ai_recs_view(state):
                     info="Include cardio exercises in the generated routines",
                 )
 
+            # Set the default value for the title textbox
+            initial_title = get_default_title("auto", "week")
             title = gr.Textbox(
                 label="Routine Folder Title",
+                value=initial_title,
                 info="Edit the title for your workout routine folder",
             )
-            routine_title = "Auto Workout Plan - Next Week"
-            if hasattr(title, "value"):
-                routine_title = title.value
 
             generate_btn = gr.Button("Generate Recommendations")
 
@@ -299,6 +314,9 @@ def ai_recs_view(state):
                 logger.error(f"Error saving to Hevy: {str(e)}")
                 return f"Error saving to Hevy: {str(e)}"
 
+        def update_title(split_type, period):
+            return get_default_title(split_type, period)
+
         # Set up event handlers
         generate_btn.click(
             fn=generate_routine,
@@ -326,6 +344,17 @@ def ai_recs_view(state):
                 exercises_summary,
                 title,
             ],
+        )
+
+        split_type.change(
+            update_title,
+            inputs=[split_type, period],
+            outputs=title,
+        )
+        period.change(
+            update_title,
+            inputs=[split_type, period],
+            outputs=title,
         )
 
         return [
