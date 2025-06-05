@@ -1,9 +1,12 @@
+import os
 from datetime import datetime, timezone
 from enum import Enum
 from typing import List, Optional
 
 import bcrypt
 from pydantic import BaseModel, EmailStr, Field, SecretStr
+
+from app.utils.crypto import encrypt_api_key
 
 
 class InjurySeverity(str, Enum):
@@ -137,6 +140,12 @@ class UserProfile(BaseModel):
 
         if weight_history is None:
             weight_history = []
+
+        # Use default Hevy API key from environment if not provided
+        if not hevy_api_key:
+            hevy_api_key = os.environ.get("HEVY_API_KEY")
+            if hevy_api_key:
+                hevy_api_key = encrypt_api_key(hevy_api_key)
 
         return cls(
             username=username,

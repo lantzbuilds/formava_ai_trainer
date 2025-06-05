@@ -229,45 +229,45 @@ def register_view():
 
                 # Save to database
                 user_dict = new_user.model_dump()
-                doc_id, doc_rev = db.save_document(user_dict)
-
-                # Sync workouts from Hevy API
-                if encrypted_key:
-                    try:
-                        logger.info(f"Initializing Hevy API sync for user {username}")
-                        hevy_api = HevyAPI(api_key=encrypted_key, is_encrypted=True)
-
-                        # Get workouts from the last 30 days for initial sync
-                        end_date = datetime.now(timezone.utc)
-                        start_date = end_date - timedelta(days=30)
-
-                        logger.info(
-                            f"Fetching workouts from {start_date} to {end_date}"
-                        )
-                        all_workouts = hevy_api.get_workouts(
-                            start_date=start_date, end_date=end_date
-                        )
-
-                        if all_workouts:
-                            logger.info(f"Found {len(all_workouts)} workouts to sync")
-                            db.save_user_workouts(doc_id, all_workouts)
-                            logger.info(
-                                f"Successfully synced {len(all_workouts)} workouts for user {username}"
-                            )
-                        else:
-                            logger.info(
-                                f"No workouts found for user {username} in the last 30 days"
-                            )
-
-                    except Exception as e:
-                        logger.error(
-                            f"Error syncing Hevy workouts for user {username}: {str(e)}"
-                        )
-                        # Continue with registration even if sync fails
-                        logger.info("Continuing with registration despite sync error")
+                doc_id, doc_rev, hevy_api_key = db.save_document(user_dict)
+                encrypted_key = hevy_api_key
 
                 # Return user object for state management
                 user = {"id": doc_id, "username": username, "email": email}
+                # Sync workouts from Hevy API
+                # if encrypted_key:
+                #     try:
+                #         logger.info(f"Initializing Hevy API sync for user {username}")
+                #         hevy_api = HevyAPI(api_key=encrypted_key, is_encrypted=True)
+
+                #         # Get workouts from the last 30 days for initial sync
+                #         end_date = datetime.now(timezone.utc)
+                #         start_date = end_date - timedelta(days=30)
+
+                #         logger.info(
+                #             f"Fetching workouts from {start_date} to {end_date}"
+                #         )
+                #         all_workouts = hevy_api.get_workouts(
+                #             start_date=start_date, end_date=end_date
+                #         )
+
+                #         if all_workouts:
+                #             logger.info(f"Found {len(all_workouts)} workouts to sync")
+                #             db.save_user_workouts(doc_id, all_workouts)
+                #             logger.info(
+                #                 f"Successfully synced {len(all_workouts)} workouts for user {username}"
+                #             )
+                #         else:
+                #             logger.info(
+                #                 f"No workouts found for user {username} in the last 30 days"
+                #             )
+
+                #     except Exception as e:
+                #         logger.error(
+                #             f"Error syncing Hevy workouts for user {username}: {str(e)}"
+                #         )
+                #         # Continue with registration even if sync fails
+                #         logger.info("Continuing with registration despite sync error")
 
                 return user, gr.update(visible=False)
 
