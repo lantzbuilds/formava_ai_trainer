@@ -204,37 +204,17 @@ def setup_routes(app, state):
             logger.info("Updating visibility")
             updates = state["update_visibility"](page)
 
-            current_user_state = user_state
-            logger.info(f"Current user state: {current_user_state}")
+            # current_user_state = user_state
+            logger.info(f"Prev user state dict id: {id(user_state)}")
 
-            # Only attempt to load data if we have a valid user state
-            # if current_user_state and current_user_state.get("id"):
-            #     if page == "dashboard":
-            #         logger.info("Loading dashboard data")
-            #         dashboard_updates = update_dashboard_fn(current_user_state)
-            #         updates = list(updates)  # Convert tuple to list for modification
-            #         updates[2:9] = (
-            #             dashboard_updates  # Replace the dashboard component updates
-            #         )
-            #         updates = tuple(updates)  # Convert back to tuple
-            #     elif page == "ai_recs":
-            #         logger.info("Loading AI RECs data")
-            #         ai_recs_updates = load_user_data_fn(current_user_state)
-            #         updates = list(updates)  # Convert tuple to list for modification
-            #         updates[3:7] = (
-            #             ai_recs_updates  # Replace the AI RECs component updates
-            #         )
-            #         updates = tuple(updates)  # Convert back to tuple
-            #     elif page == "profile":
-            #         logger.info("Loading profile data")
-            #         profile_updates = profile_load_fn(current_user_state)
-            #         updates = list(updates)  # Convert tuple to list for modification
-            #         updates[4:17] = (
-            #             profile_updates  # Replace the profile component updates
-            #         )
-            #         updates = tuple(updates)  # Convert back to tuple
+            import datetime
 
-            return user_state, *updates
+            new_user_state = dict(user_state) if user_state else {}
+            new_user_state["_profile_updated"] = datetime.datetime.now().isoformat()
+
+            logger.info(f"New user state dict id: {id(new_user_state)}")
+
+            return new_user_state, *updates
 
         # Set initial visibility when app loads
         gr.on(

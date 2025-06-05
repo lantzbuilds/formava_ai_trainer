@@ -54,7 +54,7 @@ def profile_view(state):
             with gr.Row():
                 height_feet = gr.Number(label="Height (feet)", interactive=False)
                 height_inches = gr.Number(label="Height (inches)", interactive=False)
-                weight_lbs = gr.Number(label="Weight (lbs)", interactive=False)
+                weight_lbs = gr.Number(label="Weight (lbs)", interactive=True)
 
         # Fitness Information Section
         with gr.Group():
@@ -63,21 +63,21 @@ def profile_view(state):
                 experience = gr.Dropdown(
                     label="Experience Level",
                     choices=["beginner", "intermediate", "advanced"],
-                    interactive=False,
+                    interactive=True,
                 )
                 goals = gr.CheckboxGroup(
                     label="Fitness Goals",
                     choices=[g.value for g in FitnessGoal],
-                    interactive=False,
+                    interactive=True,
                 )
             with gr.Row():
                 workout_days = gr.Number(
                     label="Preferred Workout Days per Week",
-                    interactive=False,
+                    interactive=True,
                 )
                 workout_duration = gr.Number(
                     label="Preferred Workout Duration (minutes)",
-                    interactive=False,
+                    interactive=True,
                 )
 
         # Hevy API Integration Section
@@ -278,8 +278,16 @@ def profile_view(state):
                     gr.update(value=""),
                 )
 
-        def save_profile(user_state, hevy_api_key):
-            """Save profile changes."""
+        def save_profile(
+            user_state,
+            hevy_api_key=None,
+            weight_lbs=None,
+            experience_level=None,
+            fitness_goals=None,
+            preferred_workout_days=None,
+            preferred_workout_duration=None,
+        ):
+            """Save profile changes: Hevy API key, weight, experience level, fitness goals, workout days, or duration."""
             logger.info("Saving profile with user state")
             logger.info(f"User state type: {type(user_state)}")
             logger.info(f"User state value: {user_state}")
@@ -287,9 +295,10 @@ def profile_view(state):
                 f"User state value type: {type(user_state.value) if hasattr(user_state, 'value') else 'No value attribute'}"
             )
 
+            msg = []
             if not user_state:
-                return gr.update(value="Please log in to save changes")
-
+                msg.append("Please log in to save changes")
+                return None
             try:
                 # Get current user document
                 user_id = (
@@ -301,30 +310,114 @@ def profile_view(state):
 
                 user_doc = db.get_document(user_id)
                 if not user_doc:
-                    return gr.update(value="Error: User profile not found")
+                    msg.append("Error: User profile not found")
+                    return None
 
                 user = UserProfile.from_dict(user_doc)
+                updated = False
 
                 # Update Hevy API key if provided
                 if hevy_api_key:
                     encrypted_key = encrypt_api_key(hevy_api_key)
                     user.hevy_api_key = encrypted_key
                     user.hevy_api_key_updated_at = datetime.now(timezone.utc)
+                    updated = True
+                    timestamp = user.hevy_api_key_updated_at.strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
+                    msg.append(f"Hevy API key saved successfully at {timestamp}")
 
+                # Update weight if provided
+                if weight_lbs is not None:
+                    try:
+                        weight_lbs_val = float(weight_lbs)
+                    except Exception:
+                        return gr.update(value="Invalid weight value")
+                    # Only update if changed
+                    current_weight_lbs = kg_to_lbs(user.weight_kg)
+                    if abs(weight_lbs_val - current_weight_lbs) > 0.01:
+                        from app.utils.units import lbs_to_kg
+
+                        user.weight_kg = lbs_to_kg(weight_lbs_val)
+                        # Append to weight_history
+                        if not isinstance(user.weight_history, list):
+                            user.weight_history = []
+                        user.weight_history.append(
+                            {
+                                "weight": weight_lbs_val,
+                                "date": datetime.now(timezone.utc),
+                            }
+                        )
+                        updated = True
+                        msg.append(f"Weight updated to {weight_lbs_val} lbs")
+                    else:
+                        msg.append("Weight unchanged")
+
+                # Update experience level if provided
+                if experience_level is not None:
+                    if user.experience_level != experience_level:
+                        user.experience_level = experience_level
+                        updated = True
+                        msg.append(f"Experience level updated to {experience_level}")
+
+                # Update fitness goals if provided
+                if fitness_goals is not None:
+                    # Convert to FitnessGoal enums if needed
+                    from app.models.user import FitnessGoal
+
+                    new_goals = [
+                        FitnessGoal(g) if not isinstance(g, FitnessGoal) else g
+                        for g in fitness_goals
+                    ]
+                    if set(user.fitness_goals) != set(new_goals):
+                        user.fitness_goals = new_goals
+                        updated = True
+                        msg.append(f"Fitness goals updated")
+
+                # Update preferred workout days if provided
+                if preferred_workout_days is not None:
+                    try:
+                        days_val = int(preferred_workout_days)
+                    except Exception:
+                        return gr.update(value="Invalid workout days value")
+                    if user.preferred_workout_days != days_val:
+                        user.preferred_workout_days = days_val
+                        updated = True
+                        msg.append(f"Preferred workout days updated to {days_val}")
+
+                # Update preferred workout duration if provided
+                if preferred_workout_duration is not None:
+                    try:
+                        duration_val = int(preferred_workout_duration)
+                    except Exception:
+                        return gr.update(value="Invalid workout duration value")
+                    if user.preferred_workout_duration != duration_val:
+                        user.preferred_workout_duration = duration_val
+                        updated = True
+                        msg.append(
+                            f"Preferred workout duration updated to {duration_val}"
+                        )
+
+                if updated:
                     # Save changes
                     update_doc = user.model_dump()
                     update_doc["_rev"] = user_doc["_rev"]
                     db.save_document(update_doc, doc_id=user_id)
+                    logger.info(f"Successfully saved profile changes: {msg}")
+                    # Touch user_state to trigger Gradio change event
+                    import datetime as _dt
 
-                    # Return success message with timestamp
-                    timestamp = user.hevy_api_key_updated_at.strftime(
-                        "%Y-%m-%d %H:%M:%S"
-                    )
-                    return gr.update(
-                        value=f"Hevy API key saved successfully at {timestamp}"
-                    )
+                    now_str = _dt.datetime.now().isoformat()
+                    if hasattr(user_state, "value") and isinstance(
+                        user_state.value, dict
+                    ):
+                        user_state.value["_profile_updated"] = now_str
+                    elif isinstance(user_state, dict):
+                        user_state["_profile_updated"] = now_str
+                    return None
                 else:
-                    return gr.update(value="No API key provided")
+                    logger.info("No changes to save")
+                    return None
 
             except Exception as e:
                 logger.error(f"Error saving profile: {str(e)}", exc_info=True)
@@ -681,7 +774,9 @@ def profile_view(state):
 
         # Update Hevy status and button states after saving API key
         save_hevy_key.click(
-            fn=save_profile,
+            fn=lambda user_state, hevy_api_key: save_profile(
+                user_state, hevy_api_key=hevy_api_key
+            ),
             inputs=[state["user_state"], hevy_api_key],
             outputs=[hevy_status],
         ).then(
@@ -705,6 +800,46 @@ def profile_view(state):
                 sync_recent_btn,
                 sync_full_btn,
             ],
+        )
+        # Update user state and record with new weight
+        weight_lbs.change(
+            fn=lambda user_state, weight_lbs_val: save_profile(
+                user_state, weight_lbs=weight_lbs_val
+            ),
+            inputs=[state["user_state"], weight_lbs],
+            outputs=[],
+        )
+        # Update user state and record with new experience level
+        experience.change(
+            fn=lambda user_state, experience_val: save_profile(
+                user_state, experience_level=experience_val
+            ),
+            inputs=[state["user_state"], experience],
+            outputs=[],
+        )
+        # Update user state and record with new fitness goals
+        goals.change(
+            fn=lambda user_state, goals_val: save_profile(
+                user_state, fitness_goals=goals_val
+            ),
+            inputs=[state["user_state"], goals],
+            outputs=[],
+        )
+        # Update user state and record with new preferred workout days
+        workout_days.change(
+            fn=lambda user_state, days_val: save_profile(
+                user_state, preferred_workout_days=days_val
+            ),
+            inputs=[state["user_state"], workout_days],
+            outputs=[],
+        )
+        # Update user state and record with new preferred workout duration
+        workout_duration.change(
+            fn=lambda user_state, duration_val: save_profile(
+                user_state, preferred_workout_duration=duration_val
+            ),
+            inputs=[state["user_state"], workout_duration],
+            outputs=[],
         )
 
         logger.info("Setting up add injury button click handler")
