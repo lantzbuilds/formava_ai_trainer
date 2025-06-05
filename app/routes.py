@@ -142,7 +142,7 @@ def setup_routes(app, state):
                 logger.info(
                     f"Login successful for user: {username}, returning user state: {user}"
                 )
-
+                # TODO: Add a guard to check if user is a valid dict with an id before starting sync
                 # Sync Hevy data
                 threading.Thread(
                     target=sync_hevy_data, args=(user,), daemon=True
@@ -176,7 +176,22 @@ def setup_routes(app, state):
                     "register",
                     *state["update_visibility"]("register")[6:],
                 )
+            # Ensure user is a dict with an id before starting sync
+            if not isinstance(user, dict) or "id" not in user:
+                logger.error(
+                    "handle_register: user is not a valid dict with 'id'. Skipping sync."
+                )
+                return (
+                    user,
+                    *state["update_nav_visibility"](user),
+                    "dashboard",
+                    *state["update_visibility"]("dashboard")[6:],
+                )
+            # Set user state before starting sync
+            logger.info(f"handle_register: setting user_state to {user}")
+            # Now start sync in background
             threading.Thread(target=sync_hevy_data, args=(user,), daemon=True).start()
+            logger.info("handle_register: started sync_hevy_data thread")
             return (
                 user,  # Update user state
                 *state["update_nav_visibility"](user),  # Update nav visibility
