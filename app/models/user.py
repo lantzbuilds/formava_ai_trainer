@@ -63,6 +63,11 @@ class UserProfile(BaseModel):
     sex: Sex
     age: int
 
+    # Weight History
+    weight_history: list = Field(
+        default_factory=list
+    )  # List of dicts: {"weight": float, "date": datetime}
+
     # Fitness Information
     fitness_goals: List[FitnessGoal] = []
     injuries: List[Injury] = Field(default_factory=list)
@@ -96,6 +101,15 @@ class UserProfile(BaseModel):
                         for k, v in item.items():
                             if isinstance(v, datetime):
                                 d[key][i][k] = v.isoformat()
+        # Serialize weight_history datetimes
+        if "weight_history" in d and isinstance(d["weight_history"], list):
+            for entry in d["weight_history"]:
+                if (
+                    isinstance(entry, dict)
+                    and "date" in entry
+                    and isinstance(entry["date"], datetime)
+                ):
+                    entry["date"] = entry["date"].isoformat()
         return d
 
     @classmethod
@@ -114,11 +128,15 @@ class UserProfile(BaseModel):
         preferred_workout_duration: int = 60,
         hevy_api_key: Optional[str] = None,
         injuries: Optional[List[dict]] = None,
+        weight_history: Optional[list] = None,
     ) -> "UserProfile":
         """Create a new user with a hashed password."""
         # Generate a salt and hash the password
         salt = bcrypt.gensalt()
         password_hash = bcrypt.hashpw(password.encode("utf-8"), salt)
+
+        if weight_history is None:
+            weight_history = []
 
         return cls(
             username=username,
@@ -134,6 +152,7 @@ class UserProfile(BaseModel):
             preferred_workout_duration=preferred_workout_duration,
             hevy_api_key=hevy_api_key,
             injuries=[Injury(**injury) for injury in (injuries or [])],
+            weight_history=weight_history,
         )
 
     def verify_password(self, password: str) -> bool:
@@ -149,6 +168,49 @@ class UserProfile(BaseModel):
     @classmethod
     def from_dict(cls, data: dict) -> "UserProfile":
         """Create a UserProfile instance from a dictionary."""
+        # Parse weight_history
+        wh = data.get("weight_history", [])
+        parsed_wh = []
+        for entry in wh:
+            if isinstance(entry, dict):
+                weight = entry.get("weight")
+                date = entry.get("date")
+                if isinstance(date, str):
+                    try:
+                        date = datetime.fromisoformat(date)
+                    except Exception:
+                        date = None
+                parsed_wh.append({"weight": weight, "date": date})
+            elif isinstance(entry, (float, int)):
+                # Just a number, treat as weight with unknown date
+                parsed_wh.append({"weight": entry, "date": None})
+            elif isinstance(entry, dict) and "weight" in entry and "date" in entry:
+                parsed_wh.append(entry)
+            else:
+                parsed_wh.append(entry)
+
+        # Parse injuries robustly
+        injuries_raw = data.get("injuries", [])
+        parsed_injuries = []
+        for injury in injuries_raw:
+            if isinstance(injury, Injury):
+                parsed_injuries.append(injury)
+            elif isinstance(injury, dict):
+                parsed_injuries.append(Injury(**injury))
+            else:
+                parsed_injuries.append(injury)
+
+        # Parse fitness_goals robustly
+        fg_raw = data.get("fitness_goals", [])
+        parsed_fg = []
+        for g in fg_raw:
+            if isinstance(g, FitnessGoal):
+                parsed_fg.append(g)
+            elif isinstance(g, str):
+                parsed_fg.append(FitnessGoal(g))
+            else:
+                parsed_fg.append(g)
+
         return cls(
             id=data.get("_id", data.get("id")),
             username=data["username"],
@@ -158,12 +220,13 @@ class UserProfile(BaseModel):
             weight_kg=data["weight_kg"],
             sex=Sex(data["sex"]),
             age=data["age"],
-            fitness_goals=[FitnessGoal(g) for g in data.get("fitness_goals", [])],
+            fitness_goals=parsed_fg,
             experience_level=data["experience_level"],
             preferred_workout_days=data.get("preferred_workout_days", 3),
             preferred_workout_duration=data.get("preferred_workout_duration", 60),
             hevy_api_key=data.get("hevy_api_key"),
-            injuries=[Injury(**injury) for injury in data.get("injuries", [])],
+            injuries=parsed_injuries,
+            weight_history=parsed_wh,
             _rev=data.get("_rev"),
         )
 
