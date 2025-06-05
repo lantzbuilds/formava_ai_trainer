@@ -15,6 +15,7 @@ from app.pages.login import login_view
 from app.pages.profile import profile_view
 from app.pages.register import register_view
 from app.services.sync import sync_hevy_data
+from app.state.sync_status import SYNC_STATUS
 
 logger = logging.getLogger(__name__)
 db = Database()
@@ -77,7 +78,6 @@ def setup_routes(app, state):
                     sync_full_btn,
                     sync_status,
                     is_syncing,
-                    sync_status_flag,
                     sync_status_timer,
                 ) = dashboard_components
             with gr.Group(visible=False) as ai_recs_block:
@@ -150,6 +150,7 @@ def setup_routes(app, state):
                 )
                 # TODO: Add a guard to check if user is a valid dict with an id before starting sync
                 # Sync Hevy data
+                SYNC_STATUS["status"] = "syncing"
                 threading.Thread(
                     target=sync_hevy_data, args=(user,), daemon=True
                 ).start()

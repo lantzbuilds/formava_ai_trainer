@@ -6,15 +6,13 @@ import gradio as gr
 from app.config.database import Database
 from app.models.user import UserProfile
 from app.services.sync import sync_hevy_data
+from app.state.sync_status import SYNC_STATUS
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 # Initialize database connection
 db = Database()
-
-# Add at the top of the file, after imports
-SYNC_STATUS = {"status": "idle"}
 
 
 def dashboard_view(state):
@@ -70,7 +68,7 @@ def dashboard_view(state):
             threading.Thread(target=run_sync, daemon=True).start()
             return "Syncing workouts..."
 
-        def poll_sync_status(_):
+        def poll_sync_status():
             status = SYNC_STATUS["status"]
             if status == "syncing":
                 return gr.update(value="Syncing workouts...")
@@ -83,7 +81,7 @@ def dashboard_view(state):
             else:
                 return gr.update(value="")
 
-        def update_dashboard(user_state, is_syncing_val):
+        def update_dashboard(user_state):
             logger.info("Dashboard update called with user state")
             logger.info(f"User state type: {type(user_state)}")
             logger.info(f"User state value: {user_state}")
@@ -244,7 +242,7 @@ def dashboard_view(state):
         # Load initial data when page is shown
         load_data_btn.click(
             fn=update_dashboard,
-            inputs=[state["user_state"], is_syncing],
+            inputs=[state["user_state"]],
             outputs=[
                 welcome_message,
                 total_workouts,
@@ -270,7 +268,7 @@ def dashboard_view(state):
         # Poll sync status every 2 seconds using Timer
         sync_status_timer.tick(
             fn=poll_sync_status,
-            inputs=[None],
+            inputs=[],
             outputs=[sync_status],
         )
 

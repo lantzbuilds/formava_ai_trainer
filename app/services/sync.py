@@ -4,6 +4,7 @@ from app.config.database import Database
 from app.models.user import UserProfile
 from app.services.hevy_api import HevyAPI
 from app.services.vector_store import ExerciseVectorStore
+from app.state.sync_status import SYNC_STATUS
 from app.utils.crypto import decrypt_api_key
 
 db = Database()
@@ -56,4 +57,5 @@ def sync_hevy_data(user_state):
             }
             db.save_workout(workout_data)
         vector_store.add_workout_history(workouts)
+        SYNC_STATUS["status"] = "complete"
     return "Sync complete."
