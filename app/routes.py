@@ -73,6 +73,12 @@ def setup_routes(app, state):
                     injuries_section,
                     dashboard_load_btn,
                     update_dashboard,
+                    sync_recent_btn,
+                    sync_full_btn,
+                    sync_status,
+                    is_syncing,
+                    sync_status_flag,
+                    sync_status_timer,
                 ) = dashboard_components
             with gr.Group(visible=False) as ai_recs_block:
                 ai_recs_components = ai_recs_view(state)

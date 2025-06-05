@@ -10,13 +10,16 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, List
 
 import requests
-from config.database import Database
-from models.user import UserProfile
-from services.hevy_api import HevyAPI
-from services.vector_store import ExerciseVectorStore
+
+from app.config.database import Database
+from app.models.user import UserProfile
+from app.services.hevy_api import HevyAPI
+from app.services.vector_store import ExerciseVectorStore
 
 # Configure logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+logger.info("Starting seed_recent_workouts script")
 
 
 def get_test_user() -> UserProfile:
@@ -24,7 +27,7 @@ def get_test_user() -> UserProfile:
     db = Database()
 
     # Get user by username
-    user_doc = db.get_user_by_username("test1")
+    user_doc = db.get_user_by_username("demo_user")
 
     if not user_doc:
         logger.error("Test user with username 'test1' not found")
