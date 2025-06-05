@@ -5,12 +5,16 @@ import gradio as gr
 
 from app.config.database import Database
 from app.models.user import UserProfile
+from app.services.sync import sync_hevy_data
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 # Initialize database connection
 db = Database()
+
+# Add at the top of the file, after imports
+SYNC_STATUS = {"status": "idle"}
 
 
 def dashboard_view(state):
@@ -36,10 +40,50 @@ def dashboard_view(state):
         with gr.Row():
             injuries_section = gr.Markdown("### Active Injuries\nLoading...")
 
+        # Add sync controls to dashboard
+        with gr.Row():
+            sync_recent_btn = gr.Button("Sync Recent Workouts (Last 30 Days)")
+            sync_full_btn = gr.Button("Sync Full History")
+        sync_status = gr.Markdown("")
+        is_syncing = gr.State(False)
+        sync_status_timer = gr.Timer(value=2.0, active=True)
+
         # Add a hidden button for initial data loading
         load_data_btn = gr.Button("Load Data", visible=False)
 
-        def update_dashboard(user_state):
+        def start_sync(user_state, sync_type):
+            import threading
+
+            from app.services.sync import sync_hevy_data
+
+            if SYNC_STATUS["status"] == "syncing":
+                return "Sync already in progress..."
+
+            def run_sync():
+                try:
+                    sync_hevy_data(user_state, sync_type)
+                    SYNC_STATUS["status"] = "complete"
+                except Exception as e:
+                    SYNC_STATUS["status"] = "error"
+
+            SYNC_STATUS["status"] = "syncing"
+            threading.Thread(target=run_sync, daemon=True).start()
+            return "Syncing workouts..."
+
+        def poll_sync_status(_):
+            status = SYNC_STATUS["status"]
+            if status == "syncing":
+                return gr.update(value="Syncing workouts...")
+            elif status == "complete":
+                SYNC_STATUS["status"] = "idle"
+                return gr.update(value="Sync complete!")
+            elif status == "error":
+                SYNC_STATUS["status"] = "idle"
+                return gr.update(value="Sync failed!")
+            else:
+                return gr.update(value="")
+
+        def update_dashboard(user_state, is_syncing_val):
             logger.info("Dashboard update called with user state")
             logger.info(f"User state type: {type(user_state)}")
             logger.info(f"User state value: {user_state}")
@@ -164,6 +208,9 @@ def dashboard_view(state):
                     else "No active injuries"
                 )
 
+                if is_syncing_val == "syncing":
+                    sync_status.update(value="Syncing workouts...")
+
                 return (
                     gr.update(value=f"# Welcome back, {user.username}! 👋"),
                     gr.update(
@@ -197,7 +244,7 @@ def dashboard_view(state):
         # Load initial data when page is shown
         load_data_btn.click(
             fn=update_dashboard,
-            inputs=[state["user_state"]],
+            inputs=[state["user_state"], is_syncing],
             outputs=[
                 welcome_message,
                 total_workouts,
@@ -207,6 +254,24 @@ def dashboard_view(state):
                 goals_section,
                 injuries_section,
             ],
+        )
+
+        # Add sync button event handlers
+        sync_recent_btn.click(
+            fn=lambda user_state: start_sync(user_state, "recent"),
+            inputs=[state["user_state"]],
+            outputs=[sync_status],
+        )
+        sync_full_btn.click(
+            fn=lambda user_state: start_sync(user_state, "full"),
+            inputs=[state["user_state"]],
+            outputs=[sync_status],
+        )
+        # Poll sync status every 2 seconds using Timer
+        sync_status_timer.tick(
+            fn=poll_sync_status,
+            inputs=[None],
+            outputs=[sync_status],
         )
 
         # Add logging to help debug state issues
@@ -224,4 +289,9 @@ def dashboard_view(state):
             injuries_section,
             load_data_btn,
             update_dashboard,
+            sync_recent_btn,
+            sync_full_btn,
+            sync_status,
+            is_syncing,
+            sync_status_timer,
         )
