@@ -11,6 +11,7 @@ import gradio as gr
 from dotenv import load_dotenv
 
 from app.config.database import Database
+from app.config.state import setup_state
 from app.models.user import FitnessGoal, Injury, InjurySeverity, Sex, UserProfile
 from app.pages.ai_recs import ai_recs_view
 from app.pages.dashboard import dashboard_view
@@ -20,7 +21,6 @@ from app.pages.register import register_view
 from app.routes import setup_routes
 from app.services.hevy_api import HevyAPI
 from app.services.openai_service import OpenAIService
-from app.state import setup_state
 from app.theme import setup_theme
 from app.utils.crypto import decrypt_api_key, encrypt_api_key
 from app.utils.units import (
