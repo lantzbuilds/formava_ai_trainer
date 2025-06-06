@@ -121,6 +121,19 @@
     gap: 20px;
 }
 
+#logo img {
+    height: 128px !important;
+    width: auto !important;
+    margin-right: 16px;
+    vertical-align: middle;
+}
+#app-title {
+    display: flex;
+    align-items: center;
+    font-size: 2.2rem;
+    margin-left: 8px;
+}
+
 /* Mobile optimizations */
 @media (max-width: 768px) {
     .container {

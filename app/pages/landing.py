@@ -3,13 +3,15 @@ import gradio as gr
 
 def landing_page_view(state):
     with gr.Column():
-        # Logo (replace with your logo path or use an emoji for now)
-        logo = gr.Image(
-            "static/images/formava_icon_v0_1.png", elem_id="logo", show_label=False
-        )  # or gr.Markdown("🏋️‍♂️")
-
-        # App Title
-        title = gr.Markdown("# Formava AI Trainer")
+        with gr.Row():
+            # App Title
+            title = gr.Markdown("# Formava AI Trainer", elem_id="app-title")
+            # Logo
+            logo = gr.Image(
+                "app/static/images/formava_logo_med_v0_1.png",
+                elem_id="logo",
+                show_label=False,
+            )
 
         # Introduction
         intro = gr.Markdown(
@@ -17,6 +19,8 @@ def landing_page_view(state):
             Welcome to **Formava AI Trainer**!  
             This app provides AI-guided personal training advice, designed to work seamlessly with the Hevy Workout app.  
             **But you can also use it as a standalone AI personal trainer—no Hevy account required!**
+            
+            While we're beta testing, you can use the demo account to automatically log in. It's already connected to the Hevy Workout app, so you can use it to start training right away.
             """
         )
 
@@ -27,19 +31,19 @@ def landing_page_view(state):
         def use_demo_account():
             # You can fetch the demo user from DB or hardcode credentials
             demo_user = {
-                "id": "demo_user_id",
-                "username": "DemoUser",
-                # ...other fields as needed
+                "id": "075ce2423576c5d4a0d8f883aa4ebf7e",
+                "username": "demo_user",
+                "email": "demo_user@formava.ai",
             }
-            # Set the user state and navigate to dashboard
-            state["user_state"] = demo_user
-            # You may need to trigger dashboard view here, depending on your navigation logic
-            return gr.update(), gr.update(), state  # adjust as needed
 
-        demo_btn.click(
-            fn=use_demo_account,
-            inputs=[],
-            outputs=[],  # or outputs=[...dashboard components, state] if you want to trigger navigation
-        )
+            return demo_user
 
-        return logo, title, intro, demo_btn
+        # demo_btn.click(
+        #     fn=use_demo_account,
+        #     inputs=[],
+        #     outputs=[
+        #         state["user_state"],
+        #     ],
+        # )
+
+        return title, intro, logo, demo_btn, use_demo_account
