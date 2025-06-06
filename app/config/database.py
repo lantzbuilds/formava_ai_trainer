@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 from app.config.config import COUCHDB_DB, COUCHDB_PASSWORD, COUCHDB_URL, COUCHDB_USER
 
-from .views import create_user_views, create_workout_views
+from .views import create_exercise_views, create_user_views, create_workout_views
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -145,114 +145,58 @@ class Database:
         logger.info("Mock database created for development")
 
     def _create_design_documents(self):
-        """Create necessary design documents for views."""
+        """Create necessary design documents for views using centralized view functions."""
         try:
-            # Check if users design document exists
-            if "_design/users" not in self.db:
-                logger.info("Creating users design document")
-                self.db.save(
-                    {
-                        "_id": "_design/users",
-                        "views": {
-                            "by_username": {
-                                "map": "function(doc) { if (doc.type === 'user_profile') { emit(doc.username, doc); } }"
-                            },
-                            "by_email": {
-                                "map": "function(doc) { if (doc.type === 'user_profile') { emit(doc.email, doc); } }"
-                            },
-                        },
-                    }
-                )
-                logger.info("Users design document created successfully")
-
-            # Check if exercises design document exists
-            if "_design/exercises" not in self.db:
-                logger.info("Creating exercises design document")
-                self.db.save(
-                    {
-                        "_id": "_design/exercises",
-                        "views": {
-                            "by_hevy_id": {
-                                "map": "function(doc) { if (doc.type === 'exercise') { emit(doc.hevy_id, doc); } }"
-                            },
-                            "by_muscle_group": {
-                                "map": "function(doc) { if (doc.type === 'exercise') { emit(doc.muscle_group, doc); } }"
-                            },
-                            "all": {
-                                "map": "function(doc) { if (doc.type === 'exercise') { emit(doc._id, doc); } }"
-                            },
-                        },
-                    }
-                )
-                logger.info("Exercises design document created successfully")
-
-            # Check if workouts design document exists
-            if "_design/workouts" not in self.db:
-                logger.info("Creating workouts design document")
-                self.db.save(
-                    {
-                        "_id": "_design/workouts",
-                        "views": {
-                            "by_hevy_id": {
-                                "map": "function(doc) { if (doc.type === 'workout') { emit(doc.hevy_id, doc); } }"
-                            },
-                            "by_user": {
-                                "map": "function(doc) { if (doc.type === 'workout' && doc.user_id) { emit([doc.user_id, doc.start_time], doc); } }"
-                            },
-                            "by_date": {
-                                "map": "function(doc) { if (doc.type === 'workout') { emit(doc.start_time, doc); } }"
-                            },
-                            "by_exercise": {
-                                "map": "function(doc) { if (doc.type === 'workout') { doc.exercises.forEach(function(ex) { emit([ex.template_id, doc.start_time], doc); }); } }"
-                            },
-                            "stats": {
-                                "map": "function(doc) { if (doc.type === 'workout') { emit(doc.start_time, {duration: doc.duration, exercise_count: doc.exercises.length}); } }",
-                                "reduce": "function(keys, values, rereduce) { return {total_duration: values.reduce(function(a, b) { return a + b.duration; }, 0), total_exercises: values.reduce(function(a, b) { return a + b.exercise_count; }, 0), count: values.length}; }",
-                            },
-                        },
-                    }
-                )
-                logger.info("Workouts design document created successfully")
+            create_user_views(self.db)
+            create_workout_views(self.db)
+            create_exercise_views(self.db)
+            logger.info("All design documents created successfully")
         except Exception as e:
             logger.error(f"Error creating design documents: {str(e)}")
 
     def recreate_workouts_design_document(self):
-        """Recreate the workouts design document to update views."""
+        """Recreate the workouts design document to update views using centralized view function."""
         try:
-            # Delete existing workouts design document if it exists
             if "_design/workouts" in self.db:
                 logger.info("Deleting existing workouts design document")
                 doc = self.db["_design/workouts"]
                 self.db.delete(doc)
-
-            # Create new workouts design document
             logger.info("Creating new workouts design document")
-            self.db.save(
-                {
-                    "_id": "_design/workouts",
-                    "views": {
-                        "by_hevy_id": {
-                            "map": "function(doc) { if (doc.type === 'workout') { emit(doc.hevy_id, doc); } }"
-                        },
-                        "by_user": {
-                            "map": "function(doc) { if (doc.type === 'workout' && doc.user_id) { emit([doc.user_id, doc.start_time], doc); } }"
-                        },
-                        "by_date": {
-                            "map": "function(doc) { if (doc.type === 'workout') { emit(doc.start_time, doc); } }"
-                        },
-                        "by_exercise": {
-                            "map": "function(doc) { if (doc.type === 'workout') { doc.exercises.forEach(function(ex) { emit([ex.template_id, doc.start_time], doc); }); } }"
-                        },
-                        "stats": {
-                            "map": "function(doc) { if (doc.type === 'workout') { emit(doc.start_time, {duration: doc.duration, exercise_count: doc.exercises.length}); } }",
-                            "reduce": "function(keys, values, rereduce) { return {total_duration: values.reduce(function(a, b) { return a + b.duration; }, 0), total_exercises: values.reduce(function(a, b) { return a + b.exercise_count; }, 0), count: values.length}; }",
-                        },
-                    },
-                }
-            )
+            create_workout_views(self.db)
             logger.info("Workouts design document recreated successfully")
         except Exception as e:
             logger.error(f"Error recreating workouts design document: {str(e)}")
+
+    def recreate_exercises_design_document(self):
+        """Recreate the exercises design document to update views using centralized view function."""
+        try:
+            if "_design/exercises" in self.db:
+                logger.info("Deleting existing exercises design document")
+                doc = self.db["_design/exercises"]
+                self.db.delete(doc)
+            logger.info("Creating new exercises design document")
+            create_exercise_views(self.db)
+            logger.info("Exercises design document recreated successfully")
+        except Exception as e:
+            logger.error(f"Error recreating exercises design document: {str(e)}")
+
+    def recreate_all_design_documents(self):
+        """Recreate all design documents (users, workouts, exercises) using centralized view functions."""
+        try:
+            # Delete existing design docs if they exist
+            for design in ["users", "workouts", "exercises"]:
+                doc_id = f"_design/{design}"
+                if doc_id in self.db:
+                    logger.info(f"Deleting existing {design} design document")
+                    doc = self.db[doc_id]
+                    self.db.delete(doc)
+            # Recreate all design docs
+            create_user_views(self.db)
+            create_workout_views(self.db)
+            create_exercise_views(self.db)
+            logger.info("All design documents recreated successfully")
+        except Exception as e:
+            logger.error(f"Error recreating all design documents: {str(e)}")
 
     def save_document(
         self, doc: Dict[str, Any], doc_id: Optional[str] = None
@@ -967,37 +911,6 @@ class Database:
         except Exception as e:
             logger.error(f"Error getting custom exercises: {str(e)}")
             return []
-
-    def recreate_exercises_design_document(self):
-        """Recreate the exercises design document to update views."""
-        try:
-            # Delete existing exercises design document if it exists
-            if "_design/exercises" in self.db:
-                logger.info("Deleting existing exercises design document")
-                doc = self.db["_design/exercises"]
-                self.db.delete(doc)
-
-            # Create new exercises design document
-            logger.info("Creating new exercises design document")
-            self.db.save(
-                {
-                    "_id": "_design/exercises",
-                    "views": {
-                        "by_hevy_id": {
-                            "map": "function(doc) { if (doc.type === 'exercise') { emit(doc.hevy_id, {id: doc._id, title: doc.title, muscle_groups: doc.muscle_groups, equipment: doc.equipment}); } }"
-                        },
-                        "by_muscle_group": {
-                            "map": "function(doc) { if (doc.type === 'exercise' && doc.muscle_groups) { doc.muscle_groups.forEach(function(mg) { emit(mg.name, {id: doc._id, title: doc.title, is_primary: mg.is_primary, equipment: doc.equipment}); }); } }"
-                        },
-                        "all": {
-                            "map": "function(doc) { if (doc.type === 'exercise') { emit(doc._id, {id: doc._id, title: doc.title, muscle_groups: doc.muscle_groups, equipment: doc.equipment}); } }"
-                        },
-                    },
-                }
-            )
-            logger.info("Exercises design document recreated successfully")
-        except Exception as e:
-            logger.error(f"Error recreating exercises design document: {str(e)}")
 
     def save_user_workouts(self, user_id: str, workouts: list[dict]) -> list[str]:
         """
