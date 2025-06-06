@@ -13,7 +13,7 @@ def setup_state(app):
     """Setup application state management."""
     with app:
         # Global state
-        current_page = gr.State("login")
+        current_page = gr.State("landing")
         user_state = gr.State(None)  # Store user session data
 
         def update_visibility(page):
@@ -21,6 +21,7 @@ def setup_state(app):
             return (
                 gr.update(visible=page == "register"),
                 gr.update(visible=page == "login"),
+                gr.update(visible=page == "landing"),
                 gr.update(visible=page == "dashboard"),
                 gr.update(visible=page == "ai_recs"),
                 gr.update(visible=page == "profile"),
@@ -28,6 +29,7 @@ def setup_state(app):
                 # Update button variants to show active state
                 gr.update(variant="primary" if page == "register" else "secondary"),
                 gr.update(variant="primary" if page == "login" else "secondary"),
+                gr.update(variant="primary" if page == "landing" else "secondary"),
                 gr.update(variant="primary" if page == "dashboard" else "secondary"),
                 gr.update(variant="primary" if page == "ai_recs" else "secondary"),
                 gr.update(variant="primary" if page == "profile" else "secondary"),
@@ -40,6 +42,7 @@ def setup_state(app):
                 return (
                     gr.update(visible=True),  # register
                     gr.update(visible=True),  # login
+                    gr.update(visible=True),  # landing
                     gr.update(visible=False),  # dashboard
                     gr.update(visible=False),  # ai_recs
                     gr.update(visible=False),  # profile
@@ -50,6 +53,7 @@ def setup_state(app):
                 return (
                     gr.update(visible=False),  # register
                     gr.update(visible=False),  # login
+                    gr.update(visible=True),  # landing
                     gr.update(visible=True),  # dashboard
                     gr.update(visible=True),  # ai_recs
                     gr.update(visible=True),  # profile

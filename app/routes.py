@@ -11,6 +11,7 @@ from app.config.database import Database
 from app.models.user import UserProfile
 from app.pages.ai_recs import ai_recs_view
 from app.pages.dashboard import dashboard_view
+from app.pages.landing import landing_page_view
 from app.pages.login import login_view
 from app.pages.profile import profile_view
 from app.pages.register import register_view
@@ -33,6 +34,10 @@ def setup_routes(app, state):
             with gr.Column(scale=1, min_width=120):
                 login_nav_button = gr.Button(
                     "Login", variant="primary", elem_classes="nav-button"
+                )
+            with gr.Column(scale=1, min_width=120):
+                landing_nav_button = gr.Button(
+                    "Home", variant="primary", elem_classes="nav-button"
                 )
             with gr.Column(scale=1, min_width=120):
                 dashboard_nav_button = gr.Button(
@@ -61,7 +66,15 @@ def setup_routes(app, state):
                 (login_button, login_error, login_username, login_password) = (
                     login_components
                 )
-
+            with gr.Group(visible=True) as landing_block:
+                landing_components = landing_page_view(state)
+                (
+                    title,
+                    intro,
+                    logo,
+                    demo_btn,
+                    use_demo_account,
+                ) = landing_components
             with gr.Group(visible=False) as dashboard_block:
                 dashboard_components = dashboard_view(state)
                 (
@@ -123,7 +136,7 @@ def setup_routes(app, state):
                         None,  # user_state
                         *state["update_nav_visibility"](None),  # nav buttons
                         "login",  # current_page
-                        *state["update_visibility"]("login")[6:],  # button variants
+                        *state["update_visibility"]("login")[7:],  # button variants
                     )
 
                 # Create UserProfile instance from document
@@ -136,7 +149,7 @@ def setup_routes(app, state):
                         None,  # user_state
                         *state["update_nav_visibility"](None),  # nav buttons
                         "login",  # current_page
-                        *state["update_visibility"]("login")[6:],  # button variants
+                        *state["update_visibility"]("login")[7:],  # button variants
                     )
 
                 # Return user object for state management
@@ -162,7 +175,7 @@ def setup_routes(app, state):
                     user,  # user_state
                     *nav_updates,  # nav buttons
                     "dashboard",  # current_page
-                    *state["update_visibility"]("dashboard")[6:],  # button variants
+                    *state["update_visibility"]("dashboard")[7:],  # button variants
                 )
 
             except Exception as e:
@@ -171,8 +184,17 @@ def setup_routes(app, state):
                     None,  # user_state
                     *state["update_nav_visibility"](None),  # nav buttons
                     "login",  # current_page
-                    *state["update_visibility"]("login")[6:],  # button variants
+                    *state["update_visibility"]("login")[7:],  # button variants
                 )
+
+        def handle_logout(user_state):
+            """Handle user logout."""
+            return (
+                None,  # Clear user state
+                *state["update_nav_visibility"](None),  # Update nav visibility
+                "login",  # Redirect to login
+                *state["update_visibility"]("login")[7:],  # Update button variants
+            )
 
         def handle_register(user, error_msg, user_state):
             """Handle successful registration."""
@@ -181,7 +203,7 @@ def setup_routes(app, state):
                     None,
                     *state["update_nav_visibility"](None),
                     "register",
-                    *state["update_visibility"]("register")[6:],
+                    *state["update_visibility"]("register")[7:],
                 )
             # Ensure user is a dict with an id before starting sync
             if not isinstance(user, dict) or "id" not in user:
@@ -192,7 +214,7 @@ def setup_routes(app, state):
                     user,
                     *state["update_nav_visibility"](user),
                     "dashboard",
-                    *state["update_visibility"]("dashboard")[6:],
+                    *state["update_visibility"]("dashboard")[7:],
                 )
             # Set user state before starting sync
             logger.info(f"handle_register: setting user_state to {user}")
@@ -203,16 +225,7 @@ def setup_routes(app, state):
                 user,  # Update user state
                 *state["update_nav_visibility"](user),  # Update nav visibility
                 "dashboard",  # Redirect to dashboard
-                *state["update_visibility"]("dashboard")[6:],  # Update button variants
-            )
-
-        def handle_logout(user_state):
-            """Handle user logout."""
-            return (
-                None,  # Clear user state
-                *state["update_nav_visibility"](None),  # Update nav visibility
-                "login",  # Redirect to login
-                *state["update_visibility"]("login")[6:],  # Update button variants
+                *state["update_visibility"]("dashboard")[7:],  # Update button variants
             )
 
         def update_visibility_and_load(page=None, user_state=None):
@@ -245,6 +258,7 @@ def setup_routes(app, state):
             outputs=[
                 register_nav_button,
                 login_nav_button,
+                landing_nav_button,
                 dashboard_nav_button,
                 ai_recs_nav_button,
                 profile_nav_button,
@@ -260,12 +274,14 @@ def setup_routes(app, state):
                 state["user_state"],
                 register_block,
                 login_block,
+                landing_block,
                 dashboard_block,
                 ai_recs_block,
                 profile_block,
                 state["current_page"],
                 register_nav_button,
                 login_nav_button,
+                landing_nav_button,
                 dashboard_nav_button,
                 ai_recs_nav_button,
                 profile_nav_button,
@@ -278,12 +294,34 @@ def setup_routes(app, state):
                 state["user_state"],
                 register_block,
                 login_block,
+                landing_block,
                 dashboard_block,
                 ai_recs_block,
                 profile_block,
                 state["current_page"],
                 register_nav_button,
                 login_nav_button,
+                landing_nav_button,
+                dashboard_nav_button,
+                ai_recs_nav_button,
+                profile_nav_button,
+            ],
+        )
+        landing_nav_button.click(
+            fn=lambda user_state: update_visibility_and_load("landing", user_state),
+            inputs=[state["user_state"]],
+            outputs=[
+                state["user_state"],
+                register_block,
+                login_block,
+                landing_block,
+                dashboard_block,
+                ai_recs_block,
+                profile_block,
+                state["current_page"],
+                register_nav_button,
+                login_nav_button,
+                landing_nav_button,
                 dashboard_nav_button,
                 ai_recs_nav_button,
                 profile_nav_button,
@@ -296,12 +334,14 @@ def setup_routes(app, state):
                 state["user_state"],
                 register_block,
                 login_block,
+                landing_block,
                 dashboard_block,
                 ai_recs_block,
                 profile_block,
                 state["current_page"],
                 register_nav_button,
                 login_nav_button,
+                landing_nav_button,
                 dashboard_nav_button,
                 ai_recs_nav_button,
                 profile_nav_button,
@@ -314,12 +354,14 @@ def setup_routes(app, state):
                 state["user_state"],
                 register_block,
                 login_block,
+                landing_block,
                 dashboard_block,
                 ai_recs_block,
                 profile_block,
                 state["current_page"],
                 register_nav_button,
                 login_nav_button,
+                landing_nav_button,
                 dashboard_nav_button,
                 ai_recs_nav_button,
                 profile_nav_button,
@@ -332,12 +374,14 @@ def setup_routes(app, state):
                 state["user_state"],
                 register_block,
                 login_block,
+                landing_block,
                 dashboard_block,
                 ai_recs_block,
                 profile_block,
                 state["current_page"],
                 register_nav_button,
                 login_nav_button,
+                landing_nav_button,
                 dashboard_nav_button,
                 ai_recs_nav_button,
                 profile_nav_button,
@@ -350,6 +394,7 @@ def setup_routes(app, state):
                 state["user_state"],
                 register_nav_button,
                 login_nav_button,
+                landing_nav_button,
                 dashboard_nav_button,
                 ai_recs_nav_button,
                 profile_nav_button,
@@ -357,6 +402,7 @@ def setup_routes(app, state):
                 state["current_page"],
                 register_nav_button,
                 login_nav_button,
+                landing_nav_button,
                 dashboard_nav_button,
                 ai_recs_nav_button,
                 profile_nav_button,
@@ -368,12 +414,14 @@ def setup_routes(app, state):
                 state["user_state"],
                 register_block,
                 login_block,
+                landing_block,
                 dashboard_block,
                 ai_recs_block,
                 profile_block,
                 state["current_page"],
                 register_nav_button,
                 login_nav_button,
+                landing_nav_button,
                 dashboard_nav_button,
                 ai_recs_nav_button,
                 profile_nav_button,
@@ -388,6 +436,7 @@ def setup_routes(app, state):
                 state["user_state"],
                 register_nav_button,
                 login_nav_button,
+                landing_nav_button,
                 dashboard_nav_button,
                 ai_recs_nav_button,
                 profile_nav_button,
@@ -395,6 +444,7 @@ def setup_routes(app, state):
                 state["current_page"],
                 register_nav_button,
                 login_nav_button,
+                landing_nav_button,
                 dashboard_nav_button,
                 ai_recs_nav_button,
                 profile_nav_button,
@@ -406,12 +456,14 @@ def setup_routes(app, state):
                 state["user_state"],
                 register_block,
                 login_block,
+                landing_block,
                 dashboard_block,
                 ai_recs_block,
                 profile_block,
                 state["current_page"],
                 register_nav_button,
                 login_nav_button,
+                landing_nav_button,
                 dashboard_nav_button,
                 ai_recs_nav_button,
                 profile_nav_button,
@@ -425,6 +477,7 @@ def setup_routes(app, state):
                 state["user_state"],
                 register_nav_button,
                 login_nav_button,
+                landing_nav_button,
                 dashboard_nav_button,
                 ai_recs_nav_button,
                 profile_nav_button,
@@ -432,6 +485,7 @@ def setup_routes(app, state):
                 state["current_page"],
                 register_nav_button,
                 login_nav_button,
+                landing_nav_button,
                 dashboard_nav_button,
                 ai_recs_nav_button,
                 profile_nav_button,
@@ -443,12 +497,58 @@ def setup_routes(app, state):
                 state["user_state"],
                 register_block,
                 login_block,
+                landing_block,
                 dashboard_block,
                 ai_recs_block,
                 profile_block,
                 state["current_page"],
                 register_nav_button,
                 login_nav_button,
+                landing_nav_button,
+                dashboard_nav_button,
+                ai_recs_nav_button,
+                profile_nav_button,
+            ],
+        )
+        DEMO_USERNAME = "demo_user"
+        DEMO_PASSWORD = "tryme123"
+        demo_btn.click(
+            fn=lambda user_state: handle_login(
+                DEMO_USERNAME, DEMO_PASSWORD, user_state
+            ),
+            inputs=[state["user_state"]],
+            outputs=[
+                state["user_state"],
+                register_nav_button,
+                login_nav_button,
+                landing_nav_button,
+                dashboard_nav_button,
+                ai_recs_nav_button,
+                profile_nav_button,
+                logout_nav_button,
+                state["current_page"],
+                register_nav_button,
+                login_nav_button,
+                landing_nav_button,
+                dashboard_nav_button,
+                ai_recs_nav_button,
+                profile_nav_button,
+            ],
+        ).then(
+            fn=lambda user_state, page: update_visibility_and_load(page, user_state),
+            inputs=[state["user_state"], state["current_page"]],
+            outputs=[
+                state["user_state"],
+                register_block,
+                login_block,
+                landing_block,
+                dashboard_block,
+                ai_recs_block,
+                profile_block,
+                state["current_page"],
+                register_nav_button,
+                login_nav_button,
+                landing_nav_button,
                 dashboard_nav_button,
                 ai_recs_nav_button,
                 profile_nav_button,
