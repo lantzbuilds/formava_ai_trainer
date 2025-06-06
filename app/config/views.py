@@ -40,7 +40,7 @@ def create_workout_views(db):
         "reduce": "_stats",
     }
 
-    # View for workout statistics
+    # View for workout statistics (latest version)
     stats_view = {
         "map": """
         function(doc) {
@@ -49,7 +49,7 @@ def create_workout_views(db):
                 var totalExercises = doc.exercises.length;
                 var totalWeight = 0;
                 var totalReps = 0;
-                
+                var lastWorkoutDate = doc.start_time;
                 doc.exercises.forEach(function(exercise) {
                     exercise.sets.forEach(function(set) {
                         totalSets++;
@@ -57,8 +57,7 @@ def create_workout_views(db):
                         if (set.reps) totalReps += set.reps;
                     });
                 });
-
-                emit(doc.start_time, {
+                emit(doc.user_id, {
                     workout_id: doc._id,
                     title: doc.title,
                     total_exercises: totalExercises,
@@ -66,7 +65,8 @@ def create_workout_views(db):
                     total_weight: totalWeight,
                     total_reps: totalReps,
                     duration: (new Date(doc.end_time) - new Date(doc.start_time)) / 1000 / 60, // in minutes
-                    count: 1
+                    count: 1,
+                    last_workout_date: lastWorkoutDate
                 });
             }
         }
@@ -80,9 +80,8 @@ def create_workout_views(db):
                 total_weight: 0,
                 total_reps: 0,
                 total_duration: 0,
-                last_workout: null
+                last_workout_date: null
             };
-            
             values.forEach(function(value) {
                 result.total_workouts += value.count || 1;
                 result.total_exercises += value.total_exercises || 0;
@@ -90,17 +89,10 @@ def create_workout_views(db):
                 result.total_weight += value.total_weight || 0;
                 result.total_reps += value.total_reps || 0;
                 result.total_duration += value.duration || 0;
-                
-                // Keep track of the most recent workout
-                if (!result.last_workout || value.workout_id > result.last_workout.workout_id) {
-                    result.last_workout = {
-                        id: value.workout_id,
-                        title: value.title,
-                        date: keys[0][0] // The start_time from the key
-                    };
+                if (!result.last_workout_date || value.last_workout_date > result.last_workout_date) {
+                    result.last_workout_date = value.last_workout_date;
                 }
             });
-            
             return result;
         }
         """,
@@ -144,7 +136,7 @@ def create_workout_views(db):
         db.save(design_doc)
         return True
     except Exception as e:
-        print(f"Error creating views: {e}")
+        print(f"Error creating workout views: {e}")
         return False
 
 
@@ -224,5 +216,52 @@ def create_user_views(db):
         db.save(design_doc)
         return True
     except Exception as e:
-        print(f"Error creating views: {e}")
+        print(f"Error creating user views: {e}")
+        return False
+
+
+def create_exercise_views(db):
+    """Create all necessary views for exercise queries."""
+    by_hevy_id_view = {
+        "map": """
+        function(doc) {
+            if (doc.type === 'exercise' && doc.hevy_id) {
+                emit(doc.hevy_id, {id: doc._id, title: doc.title, muscle_groups: doc.muscle_groups, equipment: doc.equipment});
+            }
+        }
+        """,
+    }
+    by_muscle_group_view = {
+        "map": """
+        function(doc) {
+            if (doc.type === 'exercise' && doc.muscle_groups) {
+                doc.muscle_groups.forEach(function(mg) {
+                    emit(mg.name, {id: doc._id, title: doc.title, is_primary: mg.is_primary, equipment: doc.equipment});
+                });
+            }
+        }
+        """,
+    }
+    all_view = {
+        "map": """
+        function(doc) {
+            if (doc.type === 'exercise') {
+                emit(doc._id, {id: doc._id, title: doc.title, muscle_groups: doc.muscle_groups, equipment: doc.equipment});
+            }
+        }
+        """,
+    }
+    design_doc = {
+        "_id": "_design/exercises",
+        "views": {
+            "by_hevy_id": by_hevy_id_view,
+            "by_muscle_group": by_muscle_group_view,
+            "all": all_view,
+        },
+    }
+    try:
+        db.save(design_doc)
+        return True
+    except Exception as e:
+        print(f"Error creating exercise views: {e}")
         return False
