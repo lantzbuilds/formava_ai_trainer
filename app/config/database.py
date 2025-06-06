@@ -407,10 +407,34 @@ class Database:
                     startkey=[user_id, to_iso(start_date)],
                     endkey=[user_id, to_iso(end_date)],
                     reduce=True,
-                    group_level=1,
+                    group_level=2,
                 )
             )
-            return [row.value for row in result]
+            # Sum the values in Python
+            total_duration = 0
+            total_exercises = 0
+            total_workouts = 0
+            last_workout_date = None
+
+            for row in result:
+                val = row.value
+                total_duration += val.get("total_duration", 0)
+                total_exercises += val.get("total_exercises", 0)
+                total_workouts += val.get("total_workouts", 0)
+                lw = val.get("last_workout_date")
+                if lw and (not last_workout_date or lw > last_workout_date):
+                    last_workout_date = lw
+            logger.info(
+                f"Workout stats (get_workout_stats): {total_duration}, {total_exercises}, {total_workouts}, {last_workout_date}"
+            )
+            return [
+                {
+                    "total_duration": total_duration,
+                    "total_exercises": total_exercises,
+                    "total_workouts": total_workouts,
+                    "last_workout_date": last_workout_date,
+                }
+            ]
         # If no date range, get all stats for the user
         result = list(
             self.db.view(

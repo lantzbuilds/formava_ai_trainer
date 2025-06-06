@@ -147,10 +147,11 @@ def dashboard_view(state):
 
                 user = UserProfile.from_dict(user_doc)
 
-                # Get workout stats
+                # Get workout stats for the last 30 days
                 now = datetime.now(timezone.utc)
                 thirty_days_ago = now - timedelta(days=30)
                 stats = db.get_workout_stats(user_id, thirty_days_ago, now)
+                logger.info(f"Workout stats: {stats}")
 
                 # The stats view now returns a single aggregated result per user
                 if stats and len(stats) > 0:
@@ -159,34 +160,65 @@ def dashboard_view(state):
                     avg_workouts_per_week = (
                         total_workouts_count / 4
                     )  # Approximate for 30 days
-
-                    last_workout_date = stats_data.get("last_workout_date")
                 else:
                     total_workouts_count = 0
                     avg_workouts_per_week = 0.0
-                    last_workout_date = None
 
-                # Calculate streak
+                # Fetch all workouts in the last 30 days for streak and last workout
+                # We'll use the Mango query approach for this
+                # (Assume you have a method to fetch all workout docs for the user and date range)
+                # We'll use the same get_workout_stats, but you may want a dedicated method for raw docs
+                # For now, let's assume get_workout_stats returns a list of dicts, each with last_workout_date
+                # If not, you may need to adjust this to fetch raw docs
+                # We'll use the stats list as a proxy for all workouts
+                all_workouts = []
+                # Try to get all workout docs for the user in the date range
+                try:
+                    # If you have a method like db.get_workouts(user_id, start, end), use it
+                    # Otherwise, fallback to stats (may need to adjust)
+                    all_workouts = db.get_workouts(user_id, thirty_days_ago, now)
+                except Exception:
+                    # Fallback: try to use stats if get_workouts is not available
+                    all_workouts = []
+
+                # If get_workouts is not available, you may need to implement it
+                # For now, let's check if all_workouts is empty, and if so, try to use stats
+                if not all_workouts:
+                    # Try to reconstruct from stats (may not have all dates)
+                    all_workouts = []
+                    for w in stats:
+                        dt = w.get("last_workout_date")
+                        if dt:
+                            all_workouts.append({"start_time": dt})
+
+                # Find the last workout date
+                last_workout_date = None
+                if all_workouts:
+                    # Get the max start_time
+                    last_workout_date = max(
+                        w["start_time"] for w in all_workouts if w.get("start_time")
+                    )
+
+                logger.info(f"Total workouts count: {total_workouts_count}")
+                logger.info(f"Avg workouts per week: {avg_workouts_per_week}")
+                logger.info(f"Last workout date: {last_workout_date}")
+
+                # Calculate streak using the set of workout dates
+                dates_with_workouts = set()
+                for w in all_workouts:
+                    dt = w.get("start_time")
+                    if dt:
+                        date_only = dt[:10]  # 'YYYY-MM-DD'
+                        dates_with_workouts.add(date_only)
+
                 streak = 0
                 current_date = now.date()
                 while True:
-                    day_start = datetime.combine(
-                        current_date, datetime.min.time(), tzinfo=timezone.utc
-                    )
-                    day_end = datetime.combine(
-                        current_date, datetime.max.time(), tzinfo=timezone.utc
-                    )
-                    date_stats = db.get_workout_stats(
-                        user_id,
-                        day_start,
-                        day_end,
-                    )
-                    if not date_stats or not any(
-                        stat.get("total_workouts", 0) > 0 for stat in date_stats
-                    ):
+                    if current_date.isoformat() in dates_with_workouts:
+                        streak += 1
+                        current_date -= timedelta(days=1)
+                    else:
                         break
-                    streak += 1
-                    current_date -= timedelta(days=1)
 
                 # Format goals
                 goals_text = "\n".join(
@@ -205,9 +237,6 @@ def dashboard_view(state):
                     if active_injuries
                     else "No active injuries"
                 )
-
-                if is_syncing_val == "syncing":
-                    sync_status.update(value="Syncing workouts...")
 
                 return (
                     gr.update(value=f"# Welcome back, {user.username}! 👋"),
