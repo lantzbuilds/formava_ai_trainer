@@ -11,15 +11,15 @@ def bootstrap_vectorstore():
         print("⚠️ No workouts found in database.")
         return
 
-    documents = [
-        {
-            "id": workout["_id"],
-            "text": f"{workout.get('type', '')} - {workout.get('start_time', '')} - {workout.get('notes', '')}",
-        }
-        for workout in workouts
-    ]
+    # documents = [
+    #     {
+    #         "id": workout["_id"],
+    #         "text": f"{workout.get('type', '')} - {workout.get('start_time', '')} - {workout.get('notes', '')}",
+    #     }
+    #     for workout in workouts
+    # ]
 
-    vector_store.add_workout_history(documents)
+    vector_store.add_workout_history(workouts)
     print(f"✅ Bootstrapped {len(documents)} workouts into vectorstore.")
 
 
