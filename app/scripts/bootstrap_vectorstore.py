@@ -19,7 +19,7 @@ def bootstrap_vectorstore():
         for workout in workouts
     ]
 
-    vector_store.add_workouts(documents)
+    vector_store.add_workout_history(documents)
     print(f"✅ Bootstrapped {len(documents)} workouts into vectorstore.")
 
 
