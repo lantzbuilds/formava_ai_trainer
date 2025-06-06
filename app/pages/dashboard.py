@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime, timedelta, timezone
 
+import dateutil.parser
 import gradio as gr
 
 from app.config.database import Database
@@ -81,6 +82,7 @@ def dashboard_view(state):
             else:
                 return gr.update(value="")
 
+        # TODO: This method is too long and needs to be refactored
         def update_dashboard(user_state):
             logger.info("Dashboard update called with user state")
             logger.info(f"User state type: {type(user_state)}")
@@ -175,8 +177,13 @@ def dashboard_view(state):
                 # Try to get all workout docs for the user in the date range
                 try:
                     # If you have a method like db.get_workouts(user_id, start, end), use it
+                    # TODO: Implement this db.get_workouts method
                     # Otherwise, fallback to stats (may need to adjust)
-                    all_workouts = db.get_workouts(user_id, thirty_days_ago, now)
+                    all_workouts = [
+                        w
+                        for w in db.get_workouts_by_date_range(thirty_days_ago, now)
+                        if w.get("user_id") == user.id
+                    ]
                 except Exception:
                     # Fallback: try to use stats if get_workouts is not available
                     all_workouts = []
@@ -199,9 +206,15 @@ def dashboard_view(state):
                         w["start_time"] for w in all_workouts if w.get("start_time")
                     )
 
+                if last_workout_date:
+                    dt = dateutil.parser.parse(last_workout_date)
+                    last_workout_str = dt.strftime("%Y-%m-%d")
+                else:
+                    last_workout_str = "No workouts yet"
+
                 logger.info(f"Total workouts count: {total_workouts_count}")
                 logger.info(f"Avg workouts per week: {avg_workouts_per_week}")
-                logger.info(f"Last workout date: {last_workout_date}")
+                logger.info(f"Last workout date: {last_workout_str}")
 
                 # Calculate streak using the set of workout dates
                 dates_with_workouts = set()
@@ -211,8 +224,14 @@ def dashboard_view(state):
                         date_only = dt[:10]  # 'YYYY-MM-DD'
                         dates_with_workouts.add(date_only)
 
+                logger.info(f"Dates with workouts: {dates_with_workouts}")
+
+                # Calculate streak
+                # TODO: Refactor to robustly handle user timezone
+                # TODO: Refactor to show streaks longer than 30 days
                 streak = 0
-                current_date = now.date()
+                current_date = now.date() - timedelta(days=1)
+                logger.info(f"Current date: {current_date}")
                 while True:
                     if current_date.isoformat() in dates_with_workouts:
                         streak += 1
@@ -246,9 +265,7 @@ def dashboard_view(state):
                     gr.update(
                         value=f"### Average Workouts per Week\n{avg_workouts_per_week:.1f} workouts"
                     ),
-                    gr.update(
-                        value=f"### Last Workout\n{last_workout_date or 'No workouts yet'}"
-                    ),
+                    gr.update(value=f"### Last Workout\n{last_workout_str}"),
                     gr.update(value=f"### Current Streak\n{streak} days"),
                     gr.update(value=f"### Your Fitness Goals\n{goals_text}"),
                     gr.update(value=f"### Active Injuries\n{injuries_text}"),
