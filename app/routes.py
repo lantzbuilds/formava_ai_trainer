@@ -59,7 +59,7 @@ def setup_routes(app, state):
         # Main Content Area
         with gr.Column(elem_classes="page-container"):
             with gr.Group(visible=False) as register_block:
-                register_components = register_view()
+                register_components = register_view(state)
                 (register_button, register_error) = register_components
             with gr.Group(visible=False) as login_block:
                 login_components = login_view()
