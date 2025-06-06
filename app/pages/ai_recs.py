@@ -1,4 +1,6 @@
 import logging
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 import gradio as gr
@@ -59,6 +61,7 @@ def ai_recs_view(state):
             gr.Markdown("## Routine Generation Preferences")
 
             with gr.Row():
+                # TODO: Create a map for the split type choices strings to display names
                 split_type = gr.Dropdown(
                     choices=["auto", "full_body", "upper_lower", "push_pull"],
                     label="Workout Split Type",
@@ -92,7 +95,7 @@ def ai_recs_view(state):
         # Generated Routine Display Section
         with gr.Group():
             gr.Markdown("## Generated Routine")
-            routine_display = gr.Markdown()
+            routine_display = gr.Markdown(" ")
 
         # Save to Hevy Section
         with gr.Group():
@@ -101,6 +104,116 @@ def ai_recs_view(state):
 
         # Add a hidden button for initial data loading
         load_data_btn = gr.Button("Load Data", visible=False)
+
+        loading_messages = [
+            "🧠 Analyzing workout history...",
+            "💡 Generating new exercise plan...",
+            "🔥 Optimizing for strength and recovery...",
+            "⏳ Almost done...",
+        ]
+        # Add state for loading
+        loading_idx = gr.State(0)
+        loading_active = gr.State(False)
+        loading_timer = gr.Timer(value=2.0, active=False)
+
+        def start_loading(*args):
+            # Start loading: set index to 0, active to True, show first message
+            return gr.update(value=loading_messages[0]), 0, True, gr.update(active=True)
+
+        def cycle_loading(idx, active):
+            if not active:
+                return gr.update(), idx  # Don't update if not active
+            next_idx = (idx + 1) % len(loading_messages)
+            return gr.update(value=loading_messages[next_idx]), next_idx
+
+        def generate_routine_llm(user_state, split, period, cardio, title):
+            # This is called after loading starts, and will stop loading when done
+            if not user_state:
+                return (
+                    gr.update(value="Please log in to generate recommendations."),
+                    False,
+                    gr.update(active=False),
+                )
+            try:
+                user_id = (
+                    user_state.value.get("id")
+                    if hasattr(user_state, "value")
+                    else user_state.get("id")
+                )
+                if not user_id:
+                    return (
+                        gr.update(value="User ID not found in state"),
+                        False,
+                        gr.update(active=False),
+                    )
+                user_doc = db.get_document(user_id)
+                if not user_doc:
+                    return (
+                        gr.update(value="User profile not found"),
+                        False,
+                        gr.update(active=False),
+                    )
+                user = UserProfile(**user_doc)
+                context = {
+                    "user_id": user_id,
+                    "user_profile": {
+                        "experience_level": user.experience_level,
+                        "fitness_goals": [g.value for g in user.fitness_goals],
+                        "preferred_workout_duration": user.preferred_workout_duration,
+                        "injuries": [
+                            {
+                                "description": i.description,
+                                "body_part": i.body_part,
+                                "is_active": i.is_active,
+                            }
+                            for i in user.injuries
+                        ],
+                        "workout_schedule": {
+                            "days_per_week": user.preferred_workout_days,
+                        },
+                    },
+                    "generation_preferences": {
+                        "split_type": split,
+                        "include_cardio": cardio,
+                    },
+                }
+                routine_folder = openai_service.generate_routine_folder(
+                    name=title,
+                    description="Personalized workout plan based on your profile and goals",
+                    context=context,
+                    period=period,
+                )
+                if routine_folder:
+                    state["generated_routine"] = routine_folder
+                    display_text = f"## {routine_folder['name']}\n"
+                    display_text += f"*{routine_folder['description']}*\n\n"
+                    display_text += f"**Split Type:** {routine_folder['split_type'].replace('_', ' ').title()}\n"
+                    display_text += (
+                        f"**Days per Week:** {routine_folder['days_per_week']}\n"
+                    )
+                    display_text += f"**Period:** {routine_folder['period'].title()}\n"
+                    display_text += (
+                        f"**Date Range:** {routine_folder['date_range']}\n\n"
+                    )
+                    for routine in routine_folder["routines"]:
+                        display_text += "---\n"
+                        display_text += format_routine_markdown(routine)
+                    return gr.update(value=display_text), False, gr.update(active=False)
+                else:
+                    return (
+                        gr.update(
+                            value="Failed to generate routine folder. Please try again."
+                        ),
+                        False,
+                        gr.update(active=False),
+                    )
+            except Exception as e:
+                logger.error(f"Error generating recommendations: {str(e)}")
+                return (
+                    gr.update(value=f"Error generating recommendations: {str(e)}"),
+                    False,
+                    gr.update(active=False),
+                )
 
         def update_ai_recs(user_state):
             """Load and display user data."""
@@ -196,89 +309,6 @@ def ai_recs_view(state):
                 "",
             )
 
-        def generate_routine(user_state, split, period, cardio, title):
-            """Generate workout routine."""
-            if not user_state:
-                return "Please log in to generate recommendations."
-
-            try:
-                # Get user document
-                # TODO: Clean up all these "value" checks
-                user_id = (
-                    user_state.value.get("id")
-                    if hasattr(user_state, "value")
-                    else user_state.get("id")
-                )
-                if not user_id:
-                    return "User ID not found in state"
-
-                user_doc = db.get_document(user_id)
-                if not user_doc:
-                    return "User profile not found"
-
-                user = UserProfile(**user_doc)
-
-                # Create context for routine generation
-                context = {
-                    "user_id": user_id,
-                    "user_profile": {
-                        "experience_level": user.experience_level,
-                        "fitness_goals": [g.value for g in user.fitness_goals],
-                        "preferred_workout_duration": user.preferred_workout_duration,
-                        "injuries": [
-                            {
-                                "description": i.description,
-                                "body_part": i.body_part,
-                                "is_active": i.is_active,
-                            }
-                            for i in user.injuries
-                        ],
-                        "workout_schedule": {
-                            "days_per_week": user.preferred_workout_days,
-                        },
-                    },
-                    "generation_preferences": {
-                        "split_type": split,
-                        "include_cardio": cardio,
-                    },
-                }
-
-                # Generate the routine folder
-                routine_folder = openai_service.generate_routine_folder(
-                    name=title,
-                    description="Personalized workout plan based on your profile and goals",
-                    context=context,
-                    period=period,
-                )
-
-                if routine_folder:
-                    # Store the generated routine in state
-                    state["generated_routine"] = routine_folder
-
-                    # Format the routine for display
-                    display_text = f"## {routine_folder['name']}\n"
-                    display_text += f"*{routine_folder['description']}*\n\n"
-                    display_text += f"**Split Type:** {routine_folder['split_type'].replace('_', ' ').title()}\n"
-                    display_text += (
-                        f"**Days per Week:** {routine_folder['days_per_week']}\n"
-                    )
-                    display_text += f"**Period:** {routine_folder['period'].title()}\n"
-                    display_text += (
-                        f"**Date Range:** {routine_folder['date_range']}\n\n"
-                    )
-
-                    for routine in routine_folder["routines"]:
-                        display_text += "---\n"
-                        display_text += format_routine_markdown(routine)
-
-                    return display_text
-                else:
-                    return "Failed to generate routine folder. Please try again."
-
-            except Exception as e:
-                logger.error(f"Error generating recommendations: {str(e)}")
-                return f"Error generating recommendations: {str(e)}"
-
         def save_to_hevy(user_state):
             """Save generated routine to Hevy."""
             if not user_state:
@@ -324,15 +354,19 @@ def ai_recs_view(state):
 
         # Set up event handlers
         generate_btn.click(
-            fn=generate_routine,
-            inputs=[
-                state["user_state"],
-                split_type,
-                period,
-                include_cardio,
-                title,
-            ],
-            outputs=routine_display,
+            fn=start_loading,
+            inputs=[],
+            outputs=[routine_display, loading_idx, loading_active, loading_timer],
+        ).then(
+            fn=generate_routine_llm,
+            inputs=[state["user_state"], split_type, period, include_cardio, title],
+            outputs=[routine_display, loading_active, loading_timer],
+        )
+        # 2. Timer cycles loading messages
+        loading_timer.tick(
+            fn=cycle_loading,
+            inputs=[loading_idx, loading_active],
+            outputs=[routine_display, loading_idx],
         )
 
         save_btn.click(
