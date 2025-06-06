@@ -1,5 +1,5 @@
-from config.database import Database
-from services.vector_store import ExerciseVectorStore
+from app.config.database import Database
+from app.services.vector_store import ExerciseVectorStore
 
 
 def bootstrap_vectorstore():
