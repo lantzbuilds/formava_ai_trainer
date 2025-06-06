@@ -32,4 +32,4 @@ ENV PYTHONUNBUFFERED=1
 ENV ENV=production
 
 # Command to run the application
-CMD ["python", "app.main"] 
+CMD ["python", "app/main.py"] 
