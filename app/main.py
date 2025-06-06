@@ -64,6 +64,8 @@ favicon_path = os.path.abspath("app/static/images/favicon.ico")
 # Load environment variables
 load_dotenv()
 
+port = int(os.getenv("PORT", 7860))
+
 # Initialize database connection - only do this once
 if gr.NO_RELOAD:
     db = Database()
@@ -110,7 +112,7 @@ def main():
     try:
         demo.launch(
             server_name="0.0.0.0",
-            server_port=7860,
+            server_port=port,
             share=True,
             debug=True,
             favicon_path=favicon_path,

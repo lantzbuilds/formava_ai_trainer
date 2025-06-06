@@ -25,11 +25,11 @@ COPY . .
 RUN mkdir -p data/vectorstore
 
 # Expose the port Gradio runs on
-EXPOSE 8080
+EXPOSE 7860
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV ENV=production
 
 # Command to run the application
-CMD ["python", "app.py"] 
+CMD ["python", "app.main"] 
