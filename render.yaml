@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: ai-personal-trainer
+    name: formava-ai-trainer
     runtime: docker
     region: oregon
     plan: free
@@ -9,11 +9,6 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
-      - key: STREAMLIT_SERVER_PORT
-        value: 8501
-      - key: STREAMLIT_SERVER_ADDRESS
-        value: 0.0.0.0
-      # Add other environment variables from .env here
       - key: COUCHDB_URL
         sync: false
       - key: OPENAI_API_KEY
@@ -21,4 +16,4 @@ services:
       - key: JWT_SECRET
         sync: false
       - key: HEVY_API_KEY
-        sync: false 
+        sync: false

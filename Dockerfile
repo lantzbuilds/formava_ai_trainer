@@ -2,7 +2,7 @@
 FROM python:3.11-slim
 
 # Set working directory to project root
-WORKDIR /ai_personal_trainer
+WORKDIR /formava_ai_trainer
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -24,14 +24,12 @@ COPY . .
 # Create necessary directories
 RUN mkdir -p data/vectorstore
 
-# Expose the port Streamlit runs on
-EXPOSE 8501
+# Expose the port Gradio runs on
+EXPOSE 7860
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
-ENV STREAMLIT_SERVER_PORT=8501
-ENV STREAMLIT_SERVER_ADDRESS=0.0.0.0
 ENV ENV=production
 
 # Command to run the application
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.enableCORS=false"] 
+CMD ["python", "app.main"] 
