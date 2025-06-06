@@ -14,7 +14,7 @@ def bootstrap_vectorstore():
     documents = [
         {
             "id": workout["_id"],
-            "text": f"{workout['type']} - {workout['date']} - {workout.get('notes', '')}",
+            "text": f"{workout.get('type', '')} - {workout.get('start_time', '')} - {workout.get('notes', '')}",
         }
         for workout in workouts
     ]
