@@ -17,7 +17,6 @@ def create_workout_views(db):
             }
         }
         """,
-        "reduce": "_stats",
     }
 
     # View for finding workouts by exercise
@@ -37,7 +36,6 @@ def create_workout_views(db):
             }
         }
         """,
-        "reduce": "_stats",
     }
 
     # View for workout statistics (latest version)
