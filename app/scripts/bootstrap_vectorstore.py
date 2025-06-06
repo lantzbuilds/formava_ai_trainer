@@ -20,7 +20,7 @@ def bootstrap_vectorstore():
     # ]
 
     vector_store.add_workout_history(workouts)
-    print(f"✅ Bootstrapped {len(documents)} workouts into vectorstore.")
+    print(f"✅ Bootstrapped {len(workouts)} workouts into vectorstore.")
 
 
 if __name__ == "__main__":
