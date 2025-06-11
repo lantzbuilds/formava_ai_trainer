@@ -1,5 +1,5 @@
-from config.database import Database
-from services.vector_store import ExerciseVectorStore
+from app.config.database import Database
+from app.services.vector_store import ExerciseVectorStore
 
 
 def bootstrap_vectorstore():
@@ -11,16 +11,16 @@ def bootstrap_vectorstore():
         print("⚠️ No workouts found in database.")
         return
 
-    documents = [
-        {
-            "id": workout["_id"],
-            "text": f"{workout['type']} - {workout['date']} - {workout.get('notes', '')}",
-        }
-        for workout in workouts
-    ]
+    # documents = [
+    #     {
+    #         "id": workout["_id"],
+    #         "text": f"{workout.get('type', '')} - {workout.get('start_time', '')} - {workout.get('notes', '')}",
+    #     }
+    #     for workout in workouts
+    # ]
 
-    vector_store.add_workouts(documents)
-    print(f"✅ Bootstrapped {len(documents)} workouts into vectorstore.")
+    vector_store.add_workout_history(workouts)
+    print(f"✅ Bootstrapped {len(workouts)} workouts into vectorstore.")
 
 
 if __name__ == "__main__":
