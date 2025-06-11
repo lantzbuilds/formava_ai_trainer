@@ -538,9 +538,6 @@ class HevyAPI:
         url = f"{self.base_url}/exercise_templates"
         params = {"page": page, "pageSize": page_size}
 
-        if include_custom:
-            params["includeCustom"] = "true"
-
         try:
             response = requests.get(url, headers=self.headers, params=params)
             response.raise_for_status()
