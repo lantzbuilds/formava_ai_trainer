@@ -1,4 +1,5 @@
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 
 import gradio as gr
@@ -166,7 +167,7 @@ def register_view(state):
             register_button = gr.Button("Register", variant="primary")
             error_message = gr.Markdown(visible=False)
 
-        def handle_register(
+        def page_handle_register(
             username,
             email,
             password,
@@ -185,11 +186,11 @@ def register_view(state):
         ):
             try:
                 if password != confirm_password:
-                    return None, gr.update(value="Passwords do not match", visible=True)
+                    return {}, gr.update(value="Passwords do not match", visible=True)
 
                 # Check if username already exists
                 if db.username_exists(username):
-                    return None, gr.update(
+                    return {}, gr.update(
                         value="Username already exists. Please choose a different username.",
                         visible=True,
                     )
@@ -199,13 +200,19 @@ def register_view(state):
                 # Convert weight to kg
                 weight_kg = lbs_to_kg(weight_lbs)
 
-                # Handle API key encryption
+                # Handle API key logic
+                ENV = os.getenv("ENV", "development")
                 encrypted_key = None
+                if not hevy_api_key or not hevy_api_key.strip():
+                    if ENV in ["development", "beta"]:
+                        default_key = os.getenv("HEVY_API_KEY")
+                        if default_key:
+                            hevy_api_key = default_key
                 if hevy_api_key and hevy_api_key.strip():
                     try:
                         encrypted_key = encrypt_api_key(hevy_api_key)
                     except Exception as e:
-                        return None, gr.update(
+                        return {}, gr.update(
                             value=f"Error encrypting Hevy API key: {str(e)}",
                             visible=True,
                         )
@@ -234,34 +241,22 @@ def register_view(state):
                 # Return user object for state management
                 user = {"id": doc_id, "username": username, "email": email}
 
+                # Only sync if user has a Hevy API key
+                if encrypted_key:
+                    import threading
+
+                    from app.services.sync import sync_hevy_data
+
+                    threading.Thread(
+                        target=sync_hevy_data, args=(user,), daemon=True
+                    ).start()
+
                 return user, gr.update(visible=False)
 
             except Exception as e:
                 logger.error(f"Registration failed: {str(e)}", exc_info=True)
-                return None, gr.update(
+                return {}, gr.update(
                     value=f"Registration failed: {str(e)}", visible=True
                 )
 
-        register_button.click(
-            fn=handle_register,
-            inputs=[
-                username,
-                email,
-                password,
-                confirm_password,
-                height_feet,
-                height_inches,
-                weight_lbs,
-                sex,
-                age,
-                experience,
-                goals,
-                preferred_workout_days,
-                preferred_workout_duration,
-                injuries,
-                hevy_api_key,
-            ],
-            outputs=[state["user_state"], error_message],
-        )
-
-        return register_button, error_message
+        return register_button, error_message, page_handle_register

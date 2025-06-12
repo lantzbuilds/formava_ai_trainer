@@ -88,11 +88,9 @@ def dashboard_view(state):
             logger.info(f"User state type: {type(user_state)}")
             logger.info(f"User state value: {user_state}")
             logger.info(f"User state has value attr: {hasattr(user_state, 'value')}")
-            if hasattr(user_state, "value"):
-                logger.info(f"User state value: {user_state.value}")
 
-            if not user_state:
-                logger.warning("No user state provided to dashboard")
+            if "id" not in user_state:
+                logger.warning("No user id in user_state")
                 return (
                     gr.update(value="Please log in to view your dashboard"),
                     gr.update(value="### Total Workouts\nPlease log in to view stats"),
@@ -111,11 +109,7 @@ def dashboard_view(state):
 
             try:
                 # Get user profile
-                user_id = (
-                    user_state.value.get("id")
-                    if hasattr(user_state, "value")
-                    else user_state.get("id")
-                )
+                user_id = user_state["id"]
                 logger.info(f"Extracted user ID: {user_id}")
                 if not user_id:
                     logger.error("No user ID found in state")

@@ -60,7 +60,9 @@ def setup_routes(app, state):
         with gr.Column(elem_classes="page-container"):
             with gr.Group(visible=False) as register_block:
                 register_components = register_view(state)
-                (register_button, register_error) = register_components
+                (register_button, register_error, page_handle_register) = (
+                    register_components
+                )
             with gr.Group(visible=False) as login_block:
                 login_components = login_view()
                 (login_button, login_error, login_username, login_password) = (
@@ -133,7 +135,7 @@ def setup_routes(app, state):
                 if not user_doc:
                     logger.warning(f"User not found: {username}")
                     return (
-                        None,  # user_state
+                        {},  # user_state
                         *state["update_nav_visibility"](None),  # nav buttons
                         "login",  # current_page
                         *state["update_visibility"]("login")[7:],  # button variants
@@ -146,7 +148,7 @@ def setup_routes(app, state):
                 if not user_profile.verify_password(password):
                     logger.warning(f"Invalid password for user: {username}")
                     return (
-                        None,  # user_state
+                        {},  # user_state
                         *state["update_nav_visibility"](None),  # nav buttons
                         "login",  # current_page
                         *state["update_visibility"]("login")[7:],  # button variants
@@ -181,7 +183,7 @@ def setup_routes(app, state):
             except Exception as e:
                 logger.error(f"Login failed: {str(e)}", exc_info=True)
                 return (
-                    None,  # user_state
+                    {},  # user_state
                     *state["update_nav_visibility"](None),  # nav buttons
                     "login",  # current_page
                     *state["update_visibility"]("login")[7:],  # button variants
@@ -190,42 +192,67 @@ def setup_routes(app, state):
         def handle_logout(user_state):
             """Handle user logout."""
             return (
-                None,  # Clear user state
+                {},  # Clear user state
                 *state["update_nav_visibility"](None),  # Update nav visibility
                 "login",  # Redirect to login
                 *state["update_visibility"]("login")[7:],  # Update button variants
             )
 
-        def handle_register(user, error_msg, user_state):
-            """Handle successful registration."""
-            if user is None:
+        def handle_register(
+            username,
+            email,
+            password,
+            confirm_password,
+            height_feet,
+            height_inches,
+            weight_lbs,
+            sex,
+            age,
+            experience,
+            goals,
+            preferred_workout_days,
+            preferred_workout_duration,
+            injuries,
+            hevy_api_key,
+            user_state,
+        ):
+            user, error_msg = page_handle_register(
+                username,
+                email,
+                password,
+                confirm_password,
+                height_feet,
+                height_inches,
+                weight_lbs,
+                sex,
+                age,
+                experience,
+                goals,
+                preferred_workout_days,
+                preferred_workout_duration,
+                injuries,
+                hevy_api_key,
+            )
+            if user is None or not isinstance(user, dict) or "id" not in user:
+                error_text = (
+                    error_msg
+                    if error_msg
+                    else "Registration failed. Please check your input and try again."
+                )
                 return (
-                    None,
+                    {},
                     *state["update_nav_visibility"](None),
                     "register",
                     *state["update_visibility"]("register")[7:],
+                    gr.update(value=error_text, visible=True),
                 )
-            # Ensure user is a dict with an id before starting sync
-            if not isinstance(user, dict) or "id" not in user:
-                logger.error(
-                    "handle_register: user is not a valid dict with 'id'. Skipping sync."
-                )
-                return (
-                    user,
-                    *state["update_nav_visibility"](user),
-                    "dashboard",
-                    *state["update_visibility"]("dashboard")[7:],
-                )
-            # Set user state before starting sync
-            logger.info(f"handle_register: setting user_state to {user}")
-            # Now start sync in background
-            threading.Thread(target=sync_hevy_data, args=(user,), daemon=True).start()
-            logger.info("handle_register: started sync_hevy_data thread")
+            # Registration successful
             return (
-                user,  # Update user state
-                *state["update_nav_visibility"](user),  # Update nav visibility
-                "dashboard",  # Redirect to dashboard
-                *state["update_visibility"]("dashboard")[7:],  # Update button variants
+                user,
+                *state["update_nav_visibility"](user),
+                "dashboard",
+                *state["update_visibility"]("dashboard")[7:],
+                gr.update(value="", visible=False),
             )
 
         def update_visibility_and_load(page=None, user_state=None):
@@ -472,7 +499,24 @@ def setup_routes(app, state):
 
         register_button.click(
             fn=handle_register,
-            inputs=[register_button, register_error, state["user_state"]],
+            inputs=[
+                username,
+                email,
+                password,
+                confirm_password,
+                height_feet,
+                height_inches,
+                weight_lbs,
+                sex,
+                age,
+                experience,
+                goals,
+                preferred_workout_days,
+                preferred_workout_duration,
+                injuries,
+                hevy_api_key,
+                state["user_state"],
+            ],
             outputs=[
                 state["user_state"],
                 register_nav_button,
@@ -489,25 +533,7 @@ def setup_routes(app, state):
                 dashboard_nav_button,
                 ai_recs_nav_button,
                 profile_nav_button,
-            ],
-        ).then(
-            fn=lambda user_state, page: update_visibility_and_load(page, user_state),
-            inputs=[state["user_state"], state["current_page"]],
-            outputs=[
-                state["user_state"],
-                register_block,
-                login_block,
-                landing_block,
-                dashboard_block,
-                ai_recs_block,
-                profile_block,
-                state["current_page"],
-                register_nav_button,
-                login_nav_button,
-                landing_nav_button,
-                dashboard_nav_button,
-                ai_recs_nav_button,
-                profile_nav_button,
+                register_error,
             ],
         )
         DEMO_USERNAME = "demo_user"

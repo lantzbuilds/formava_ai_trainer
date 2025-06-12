@@ -128,18 +128,14 @@ def ai_recs_view(state):
 
         def generate_routine_llm(user_state, split, period, cardio, title):
             # This is called after loading starts, and will stop loading when done
-            if not user_state:
+            if "id" not in user_state:
                 return (
                     gr.update(value="Please log in to generate recommendations."),
                     False,
                     gr.update(active=False),
                 )
             try:
-                user_id = (
-                    user_state.value.get("id")
-                    if hasattr(user_state, "value")
-                    else user_state.get("id")
-                )
+                user_id = user_state["id"]
                 if not user_id:
                     return (
                         gr.update(value="User ID not found in state"),
@@ -218,7 +214,7 @@ def ai_recs_view(state):
         def update_ai_recs(user_state):
             """Load and display user data."""
             logger.info(f"Updating AI Recs")
-            if not user_state:
+            if "id" not in user_state:
                 return (
                     "Please log in to view recommendations.",
                     "Please log in to view workout history.",
@@ -228,11 +224,7 @@ def ai_recs_view(state):
                 )
 
             # Get user document from database
-            user_id = (
-                user_state.value.get("id")
-                if hasattr(user_state, "value")
-                else user_state.get("id")
-            )
+            user_id = user_state["id"]
             logger.info(f"User ID: {user_id}")
             if not user_id:
                 return (
@@ -311,16 +303,12 @@ def ai_recs_view(state):
 
         def save_to_hevy(user_state):
             """Save generated routine to Hevy."""
-            if not user_state:
+            if "id" not in user_state:
                 return "Please log in to save to Hevy."
 
             try:
                 # Get user document
-                user_id = (
-                    user_state.value.get("id")
-                    if hasattr(user_state, "value")
-                    else user_state.get("id")
-                )
+                user_id = user_state["id"]
                 if not user_id:
                     return "User ID not found in state"
 
