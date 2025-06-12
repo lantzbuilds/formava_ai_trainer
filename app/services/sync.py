@@ -12,7 +12,7 @@ vector_store = ExerciseVectorStore()
 
 
 def sync_hevy_data(user_state):
-    if not user_state or not user_state.get("id"):
+    if "id" not in user_state:
         return "No user logged in."
 
     user_doc = db.get_document(user_state["id"])
