@@ -59,10 +59,17 @@ def setup_routes(app, state):
         # Main Content Area
         with gr.Column(elem_classes="page-container"):
             with gr.Group(visible=False) as register_block:
-                register_components = register_view(state)
-                (register_button, register_error, page_handle_register) = (
-                    register_components
+                register_components = register_view(
+                    state,
+                    register_nav_button,
+                    login_nav_button,
+                    landing_nav_button,
+                    dashboard_nav_button,
+                    ai_recs_nav_button,
+                    profile_nav_button,
+                    logout_nav_button,
                 )
+                (_, register_error, _) = register_components
             with gr.Group(visible=False) as login_block:
                 login_components = login_view()
                 (login_button, login_error, login_username, login_password) = (
@@ -196,63 +203,6 @@ def setup_routes(app, state):
                 *state["update_nav_visibility"](None),  # Update nav visibility
                 "login",  # Redirect to login
                 *state["update_visibility"]("login")[7:],  # Update button variants
-            )
-
-        def handle_register(
-            username,
-            email,
-            password,
-            confirm_password,
-            height_feet,
-            height_inches,
-            weight_lbs,
-            sex,
-            age,
-            experience,
-            goals,
-            preferred_workout_days,
-            preferred_workout_duration,
-            injuries,
-            hevy_api_key,
-            user_state,
-        ):
-            user, error_msg = page_handle_register(
-                username,
-                email,
-                password,
-                confirm_password,
-                height_feet,
-                height_inches,
-                weight_lbs,
-                sex,
-                age,
-                experience,
-                goals,
-                preferred_workout_days,
-                preferred_workout_duration,
-                injuries,
-                hevy_api_key,
-            )
-            if user is None or not isinstance(user, dict) or "id" not in user:
-                error_text = (
-                    error_msg
-                    if error_msg
-                    else "Registration failed. Please check your input and try again."
-                )
-                return (
-                    {},
-                    *state["update_nav_visibility"](None),
-                    "register",
-                    *state["update_visibility"]("register")[7:],
-                    gr.update(value=error_text, visible=True),
-                )
-            # Registration successful
-            return (
-                user,
-                *state["update_nav_visibility"](user),
-                "dashboard",
-                *state["update_visibility"]("dashboard")[7:],
-                gr.update(value="", visible=False),
             )
 
         def update_visibility_and_load(page=None, user_state=None):
@@ -459,90 +409,6 @@ def setup_routes(app, state):
         login_button.click(
             fn=handle_login,
             inputs=[login_username, login_password, state["user_state"]],
-            outputs=[
-                state["user_state"],
-                register_nav_button,
-                login_nav_button,
-                landing_nav_button,
-                dashboard_nav_button,
-                ai_recs_nav_button,
-                profile_nav_button,
-                logout_nav_button,
-                state["current_page"],
-                register_nav_button,
-                login_nav_button,
-                landing_nav_button,
-                dashboard_nav_button,
-                ai_recs_nav_button,
-                profile_nav_button,
-            ],
-        ).then(
-            fn=lambda user_state, page: update_visibility_and_load(page, user_state),
-            inputs=[state["user_state"], state["current_page"]],
-            outputs=[
-                state["user_state"],
-                register_block,
-                login_block,
-                landing_block,
-                dashboard_block,
-                ai_recs_block,
-                profile_block,
-                state["current_page"],
-                register_nav_button,
-                login_nav_button,
-                landing_nav_button,
-                dashboard_nav_button,
-                ai_recs_nav_button,
-                profile_nav_button,
-            ],
-        )
-
-        register_button.click(
-            fn=handle_register,
-            inputs=[
-                username,
-                email,
-                password,
-                confirm_password,
-                height_feet,
-                height_inches,
-                weight_lbs,
-                sex,
-                age,
-                experience,
-                goals,
-                preferred_workout_days,
-                preferred_workout_duration,
-                injuries,
-                hevy_api_key,
-                state["user_state"],
-            ],
-            outputs=[
-                state["user_state"],
-                register_nav_button,
-                login_nav_button,
-                landing_nav_button,
-                dashboard_nav_button,
-                ai_recs_nav_button,
-                profile_nav_button,
-                logout_nav_button,
-                state["current_page"],
-                register_nav_button,
-                login_nav_button,
-                landing_nav_button,
-                dashboard_nav_button,
-                ai_recs_nav_button,
-                profile_nav_button,
-                register_error,
-            ],
-        )
-        DEMO_USERNAME = "demo_user"
-        DEMO_PASSWORD = "tryme123"
-        demo_btn.click(
-            fn=lambda user_state: handle_login(
-                DEMO_USERNAME, DEMO_PASSWORD, user_state
-            ),
-            inputs=[state["user_state"]],
             outputs=[
                 state["user_state"],
                 register_nav_button,
