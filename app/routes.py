@@ -495,3 +495,25 @@ def setup_routes(app, state):
                 save_status,
             ],
         )
+
+        # Listen for changes to the current page and update visibility
+        state["current_page"].change(
+            fn=lambda page, user_state: update_visibility_and_load(page, user_state),
+            inputs=[state["current_page"], state["user_state"]],
+            outputs=[
+                state["user_state"],
+                register_block,
+                login_block,
+                landing_block,
+                dashboard_block,
+                ai_recs_block,
+                profile_block,
+                state["current_page"],
+                register_nav_button,
+                login_nav_button,
+                landing_nav_button,
+                dashboard_nav_button,
+                ai_recs_nav_button,
+                profile_nav_button,
+            ],
+        )
