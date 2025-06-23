@@ -28,6 +28,7 @@ def calculate_duration_minutes(start_time, end_time):
 
 
 def sync_hevy_data(user_state):
+    SYNC_STATUS["status"] = "syncing"
     if "id" not in user_state:
         return "No user logged in."
 
