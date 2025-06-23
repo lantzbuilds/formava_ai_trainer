@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta, timezone
 
 from app.config.database import Database
@@ -7,8 +8,23 @@ from app.services.vector_store import ExerciseVectorStore
 from app.state.sync_status import SYNC_STATUS
 from app.utils.crypto import decrypt_api_key
 
+logger = logging.getLogger(__name__)
+
+
 db = Database()
 vector_store = ExerciseVectorStore()
+
+
+def calculate_duration_minutes(start_time, end_time):
+    if not start_time or not end_time:
+        return None
+    try:
+        start_dt = datetime.fromisoformat(start_time)
+        end_dt = datetime.fromisoformat(end_time)
+        return int((end_dt - start_dt).total_seconds() / 60)
+    except Exception as e:
+        logger.error(f"Error calculating duration: {e}")
+        return None
 
 
 def sync_hevy_data(user_state):
@@ -19,12 +35,11 @@ def sync_hevy_data(user_state):
     if not user_doc:
         return "User profile not found."
 
-    user = UserProfile(**user_doc)
-    if not user.hevy_api_key:
+    if not user_doc.get("hevy_api_key"):
         return "Hevy API key not configured."
 
     # Decrypt API key
-    api_key = decrypt_api_key(user.hevy_api_key)
+    api_key = decrypt_api_key(user_doc["hevy_api_key"])
     hevy_api = HevyAPI(api_key, is_encrypted=False)
 
     # Sync base and custom exercises
@@ -35,7 +50,7 @@ def sync_hevy_data(user_state):
                 exercise.model_dump() for exercise in exercise_list.exercises
             ]
             db.save_exercises(
-                exercises_data, user_id=user.id if include_custom else None
+                exercises_data, user_id=user_doc["_id"] if include_custom else None
             )
             vector_store.add_exercises(exercises_data)
 
@@ -44,18 +59,33 @@ def sync_hevy_data(user_state):
     start_date = end_date - timedelta(days=30)
     workouts = hevy_api.get_workouts(start_date, end_date)
     if workouts:
+        enriched_workouts = []
         for workout in workouts:
+            # Skip if workout is missing required fields
+            if not workout.get("title") or not workout.get("exercises"):
+                logger.warning(
+                    f"Skipping workout due to missing required fields: {workout}"
+                )
+                continue
+
+            if not user_doc["_id"]:
+                logger.warning(f"Skipping workout due to missing user_id: {workout}")
+                continue
             workout_data = {
                 "hevy_id": workout["id"],
-                "user_id": user.id,
+                "user_id": user_doc["_id"],
                 "title": workout.get("title", "Untitled Workout"),
                 "description": workout.get("description", ""),
                 "start_time": workout.get("start_time"),
                 "end_time": workout.get("end_time"),
+                "duration_minutes": calculate_duration_minutes(
+                    workout.get("start_time"), workout.get("end_time")
+                ),
                 "exercises": workout.get("exercises", []),
                 "exercise_count": len(workout.get("exercises", [])),
             }
             db.save_workout(workout_data)
-        vector_store.add_workout_history(workouts)
+            enriched_workouts.append(workout_data)
+        vector_store.add_workout_history(enriched_workouts)
         SYNC_STATUS["status"] = "complete"
     return "Sync complete."
