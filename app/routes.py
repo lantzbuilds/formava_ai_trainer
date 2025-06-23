@@ -101,6 +101,7 @@ def setup_routes(app, state):
                     sync_status,
                     is_syncing,
                     sync_status_timer,
+                    refresh_needed,
                 ) = dashboard_components
             with gr.Group(visible=False) as ai_recs_block:
                 ai_recs_components = ai_recs_view(state)
@@ -172,7 +173,6 @@ def setup_routes(app, state):
                 )
                 # TODO: Add a guard to check if user is a valid dict with an id before starting sync
                 # Sync Hevy data
-                SYNC_STATUS["status"] = "syncing"
                 threading.Thread(
                     target=sync_hevy_data, args=(user,), daemon=True
                 ).start()
