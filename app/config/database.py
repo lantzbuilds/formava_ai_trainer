@@ -4,9 +4,9 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-import couchdb
 from dotenv import load_dotenv
 
+import couchdb
 from app.config.config import COUCHDB_DB, COUCHDB_PASSWORD, COUCHDB_URL, COUCHDB_USER
 
 from .views import create_exercise_views, create_user_views, create_workout_views
@@ -912,6 +912,7 @@ class Database:
             logger.error(f"Error getting custom exercises: {str(e)}")
             return []
 
+    # TODO: is this method being used?
     def save_user_workouts(self, user_id: str, workouts: list[dict]) -> list[str]:
         """
         Save multiple workouts for a user.

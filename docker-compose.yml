@@ -1,6 +1,20 @@
-name: formava_ai_trainer
+version: '3.8'
 
 services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/formava_ai_trainer
+    ports:
+      - "7860:7860"
+    environment:
+      - ENV=development
+    command: ["python", "-m", "app.main"]
+    depends_on:
+      - couchdb
+
   couchdb:
     container_name: formava_ai_trainer_couchdb
     image: couchdb:3.3.2
@@ -15,6 +29,7 @@ services:
       - COUCHDB_SYSTEM_ADMIN_PASSWORD=${COUCHDB_PASSWORD:-dev_KTq29pZuEi1VsoNqf2mJMPTg}
     volumes:
       - couchdb_data:/opt/couchdb/data
+      - ./couchdb/local.ini:/opt/couchdb/etc/local.d/local.ini
     healthcheck:
       test: ["CMD", "curl", "-f", "http://${COUCHDB_USER:-ai_trainer_admin}:${COUCHDB_PASSWORD:-dev_KTq29pZuEi1VsoNqf2mJMPTg}@localhost:5984/"]
       interval: 10s
@@ -30,4 +45,4 @@ services:
 
 volumes:
   couchdb_data:
-    name: formada_ai_trainer_couchdb_data 
+    name: formava_ai_trainer_couchdb_data 
