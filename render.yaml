@@ -42,3 +42,16 @@ services:
         sync: false
       - key: HEVY_API_KEY
         sync: false
+
+  - type: web
+    name: formava-ai-trainer-staging-db
+    runtime: docker
+    region: oregon
+    plan: starter
+    dockerfilePath: ./Dockerfile.couchdb
+    healthCheckPath: /
+    envVars:
+      - key: COUCHDB_USER
+        sync: false
+      - key: COUCHDB_PASSWORD
+        sync: false
