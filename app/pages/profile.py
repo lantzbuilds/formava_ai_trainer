@@ -150,11 +150,11 @@ def profile_view(state):
             logger.info(f"User state type: {type(user_state)}")
             logger.info(f"User state value: {user_state}")
             logger.info(
-                f"User state value type: {type(user_state.value) if hasattr(user_state, 'value') else 'No value attribute'}"
+                f"User state value type: {type(user_state) if hasattr(user_state, 'value') else 'No value attribute'}"
             )
 
-            if not user_state:
-                logger.warning("No user state provided")
+            if "id" not in user_state:
+                logger.warning("No user id in user state provided")
                 return (
                     gr.update(value="Please log in to view your profile"),
                     gr.update(value=""),
@@ -173,11 +173,7 @@ def profile_view(state):
 
             try:
                 # Get user profile
-                user_id = (
-                    user_state.value.get("id")
-                    if hasattr(user_state, "value")
-                    else user_state.get("id")
-                )
+                user_id = user_state.get("id")
                 logger.info(f"Loading profile for user ID: {user_id}")
                 if not user_id:
                     logger.error(
@@ -303,20 +299,16 @@ def profile_view(state):
             logger.info(f"User state type: {type(user_state)}")
             logger.info(f"User state value: {user_state}")
             logger.info(
-                f"User state value type: {type(user_state.value) if hasattr(user_state, 'value') else 'No value attribute'}"
+                f"User state value type: {type(user_state) if hasattr(user_state, 'value') else 'No value attribute'}"
             )
 
             msg = []
-            if not user_state:
+            if "id" not in user_state:
                 msg.append("Please log in to save changes")
                 return None
             try:
                 # Get current user document
-                user_id = (
-                    user_state.value.get("id")
-                    if hasattr(user_state, "value")
-                    else user_state.get("id")
-                )
+                user_id = user_state.get("id")
                 logger.info(f"Saving profile for user ID: {user_id}")
 
                 if not user_id:
@@ -445,8 +437,8 @@ def profile_view(state):
         ):
             """Add a new injury to the user's profile."""
             logger.info(f"Adding injury with user state: {user_state}")
-            if not user_state:
-                logger.warning("No user state provided when adding injury")
+            if "id" not in user_state:
+                logger.warning("No user id in user state provided when adding injury")
                 return gr.update(value="Please log in to add injuries")
 
             if not description or not body_part:
@@ -455,11 +447,7 @@ def profile_view(state):
 
             try:
                 # Get current user document
-                user_id = (
-                    user_state.value["id"]
-                    if hasattr(user_state, "value")
-                    else user_state["id"]
-                )
+                user_id = user_state["id"]
                 if not user_id:
                     logger.error(
                         f"User ID not found in user state: {user_state}; cannot add injury"
@@ -505,16 +493,12 @@ def profile_view(state):
         def toggle_injury_active(user_state, injury_index):
             """Toggle the active status of an injury."""
             logger.info(f"Toggling injury {injury_index} active status")
-            if not user_state:
+            if "id" not in user_state:
                 return gr.update(value="Please log in to modify injuries")
 
             try:
                 # Get current user document
-                user_id = (
-                    user_state.value["id"]
-                    if hasattr(user_state, "value")
-                    else user_state["id"]
-                )
+                user_id = user_state["id"]
                 if not user_id:
                     logger.error(
                         f"User ID not found in user state: {user_state}; cannot toggle injury active status"
@@ -550,16 +534,12 @@ def profile_view(state):
         def delete_injury(user_state, injury_index):
             """Delete an injury from the user's profile."""
             logger.info(f"Deleting injury {injury_index}")
-            if not user_state:
+            if "id" not in user_state:
                 return gr.update(value="Please log in to delete injuries")
 
             try:
                 # Get current user document
-                user_id = (
-                    user_state.value["id"]
-                    if hasattr(user_state, "value")
-                    else user_state["id"]
-                )
+                user_id = user_state["id"]
                 if not user_id:
                     logger.error(
                         f"User ID not found in user state: {user_state}; cannot delete injury"
@@ -614,7 +594,7 @@ def profile_view(state):
             logger.info(f"User state type: {type(user_state)}")
             logger.info(f"User state value: {user_state}")
             logger.info(
-                f"User state value type: {type(user_state.value) if hasattr(user_state, 'value') else 'No value attribute'}"
+                f"User state value type: {type(user_state) if hasattr(user_state, 'value') else 'No value attribute'}"
             )
 
             profile_updates = update_profile(user_state)

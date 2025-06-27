@@ -132,7 +132,7 @@ class HevyAPI:
 
             except requests.exceptions.RequestException as e:
                 logger.error(f"Error fetching workouts: {str(e)}")
-                if hasattr(e, "response"):
+                if hasattr(e, "response") and e.response is not None:
                     logger.error(f"Response status: {e.response.status_code}")
                     logger.error(f"Response headers: {dict(e.response.headers)}")
                     logger.error(f"Response body: {e.response.text}")
