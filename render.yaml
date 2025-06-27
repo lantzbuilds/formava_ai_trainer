@@ -50,6 +50,7 @@ services:
     plan: starter
     dockerfilePath: ./Dockerfile.couchdb
     healthCheckPath: /
+    branch: main
     envVars:
       - key: COUCHDB_USER
         sync: false
