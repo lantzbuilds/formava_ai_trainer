@@ -27,16 +27,18 @@ def calculate_duration_minutes(start_time, end_time):
         return None
 
 
-def sync_hevy_data(user_state):
+def sync_hevy_data(user_state, sync_type="recent"):
     SYNC_STATUS["status"] = "syncing"
     if "id" not in user_state:
         return "No user logged in."
 
     user_doc = db.get_document(user_state["id"])
     if not user_doc:
+        SYNC_STATUS["status"] = "error"
         return "User profile not found."
 
     if not user_doc.get("hevy_api_key"):
+        SYNC_STATUS["status"] = "error"
         return "Hevy API key not configured."
 
     # Decrypt API key
@@ -55,9 +57,16 @@ def sync_hevy_data(user_state):
             )
             vector_store.add_exercises(exercises_data)
 
-    # Sync recent workouts
+    # Determine date range for sync
     end_date = datetime.now(timezone.utc)
-    start_date = end_date - timedelta(days=30)
+    if sync_type == "full":
+        # Full sync: fetch all workouts from a very early date
+        start_date = datetime(2000, 1, 1, tzinfo=timezone.utc)
+    else:
+        # Recent sync: last 30 days
+        start_date = end_date - timedelta(days=30)
+
+    # Sync workouts in the determined date range
     workouts = hevy_api.get_workouts(start_date, end_date)
     if workouts:
         enriched_workouts = []

@@ -64,6 +64,7 @@ def dashboard_view(state):
                     sync_hevy_data(user_state, sync_type)
                     SYNC_STATUS["status"] = "complete"
                 except Exception as e:
+                    logger.error(f"Error syncing workouts: {e}", exc_info=True)
                     SYNC_STATUS["status"] = "error"
 
             SYNC_STATUS["status"] = "syncing"
