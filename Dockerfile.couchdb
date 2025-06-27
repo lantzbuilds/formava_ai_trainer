@@ -1,0 +1,4 @@
+FROM couchdb:3
+
+# Expose CouchDB's default port
+EXPOSE 5984
