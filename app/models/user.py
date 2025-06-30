@@ -34,6 +34,11 @@ class Sex(str, Enum):
     PREFER_NOT_TO_SAY = "prefer_not_to_say"
 
 
+class UnitSystem(str, Enum):
+    METRIC = "metric"
+    IMPERIAL = "imperial"
+
+
 class FitnessGoal(str, Enum):
     STRENGTH = "strength"
     MUSCLE_GAIN = "muscle_gain"
@@ -78,6 +83,11 @@ class UserProfile(BaseModel):
     # Workout Preferences
     preferred_workout_days: int = 3  # Number of days per week
     preferred_workout_duration: int = 60  # Duration in minutes
+
+    # Unit Preferences
+    preferred_units: UnitSystem = (
+        UnitSystem.IMPERIAL
+    )  # Default to Imperial for US users
 
     # Additional Information
     preferred_workout_time: Optional[str] = (
@@ -129,6 +139,7 @@ class UserProfile(BaseModel):
         experience_level: str,
         preferred_workout_days: int = 3,
         preferred_workout_duration: int = 60,
+        preferred_units: UnitSystem = UnitSystem.IMPERIAL,
         hevy_api_key: Optional[str] = None,
         injuries: Optional[List[dict]] = None,
         weight_history: Optional[list] = None,
@@ -159,6 +170,7 @@ class UserProfile(BaseModel):
             experience_level=experience_level,
             preferred_workout_days=preferred_workout_days,
             preferred_workout_duration=preferred_workout_duration,
+            preferred_units=preferred_units,
             hevy_api_key=hevy_api_key,
             injuries=[Injury(**injury) for injury in (injuries or [])],
             weight_history=weight_history,
@@ -233,6 +245,9 @@ class UserProfile(BaseModel):
             experience_level=data["experience_level"],
             preferred_workout_days=data.get("preferred_workout_days", 3),
             preferred_workout_duration=data.get("preferred_workout_duration", 60),
+            preferred_units=UnitSystem(
+                data.get("preferred_units", UnitSystem.IMPERIAL)
+            ),
             hevy_api_key=data.get("hevy_api_key"),
             injuries=parsed_injuries,
             weight_history=parsed_wh,
