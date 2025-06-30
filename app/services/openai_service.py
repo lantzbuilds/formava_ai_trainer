@@ -411,6 +411,43 @@ class OpenAIService:
                 logger.info("Generated routine JSON:")
                 logger.info(json.dumps(routine_json, indent=2))
 
+                # --- Begin validation and correction logic ---
+                valid_ids, name_to_id = (
+                    self.vector_store.get_all_exercise_ids_and_names()
+                )
+                invalid_exercises = []
+                corrected = False
+                if "hevy_api" in routine_json and "routine" in routine_json["hevy_api"]:
+                    for exercise in routine_json["hevy_api"]["routine"]["exercises"]:
+                        exercise_id = exercise.get("exercise_template_id")
+                        exercise_name = exercise.get("name") or exercise.get("title")
+                        # If ID is valid, continue
+                        if exercise_id in valid_ids:
+                            continue
+                        # Try to correct by name
+                        if exercise_name and exercise_name.lower() in name_to_id:
+                            corrected_id = name_to_id[exercise_name.lower()]
+                            logger.warning(
+                                f"Corrected invalid exercise_template_id '{exercise_id}' to '{corrected_id}' for name '{exercise_name}'"
+                            )
+                            exercise["exercise_template_id"] = corrected_id
+                            corrected = True
+                        else:
+                            logger.error(
+                                f"Invalid exercise_template_id '{exercise_id}' and cannot correct for name '{exercise_name}'"
+                            )
+                            invalid_exercises.append(exercise)
+                    # If any invalid exercises remain, flag as invalid and return None
+                    if invalid_exercises:
+                        logger.error(
+                            f"Routine contains uncorrectable invalid exercise_template_ids. Triggering regeneration."
+                        )
+                        return None
+                    if corrected:
+                        logger.info(
+                            "Routine contained invalid IDs that were corrected by name."
+                        )
+
                 # Add exercise names to the routine data
                 if "hevy_api" in routine_json and "routine" in routine_json["hevy_api"]:
                     for exercise in routine_json["hevy_api"]["routine"]["exercises"]:
@@ -492,6 +529,7 @@ class OpenAIService:
             Dictionary containing the routine folder structure
         """
         try:
+            MAX_ATTEMPTS = 3
             # Get user profile from context
             user_profile = context.get("user_profile", {})
             experience_level = user_profile.get("experience_level", "beginner")
@@ -515,20 +553,36 @@ class OpenAIService:
             for routine in routines[
                 :days_per_week
             ]:  # Only generate for the requested number of days
-                # Generate routine for this day
-                routine_data = self.generate_routine(
-                    day=routine["day"],
-                    focus=routine["focus"],
-                    context=context,
-                    include_cardio=context.get("generation_preferences", {}).get(
-                        "include_cardio", False
-                    ),
-                )
-                if routine_data:
-                    # Add the day and focus to the routine data
-                    routine_data["day"] = routine["day"]
-                    routine_data["focus"] = routine["focus"]
-                    generated_routines.append(routine_data)
+                # Retry logic for each routine
+                routine_data = None
+                for attempt in range(1, MAX_ATTEMPTS + 1):
+                    routine_data = self.generate_routine(
+                        day=routine["day"],
+                        focus=routine["focus"],
+                        context=context,
+                        include_cardio=context.get("generation_preferences", {}).get(
+                            "include_cardio", False
+                        ),
+                    )
+                    if routine_data:
+                        if attempt > 1:
+                            logger.info(
+                                f"Routine for {routine['day']} ({routine['focus']}) succeeded after {attempt} attempts."
+                            )
+                        break
+                    else:
+                        logger.warning(
+                            f"Routine for {routine['day']} ({routine['focus']}) failed on attempt {attempt}."
+                        )
+                if not routine_data:
+                    logger.error(
+                        f"Failed to generate routine for {routine['day']} ({routine['focus']}) after {MAX_ATTEMPTS} attempts."
+                    )
+                    return None
+                # Add the day and focus to the routine data
+                routine_data["day"] = routine["day"]
+                routine_data["focus"] = routine["focus"]
+                generated_routines.append(routine_data)
 
             if not generated_routines:
                 logger.error("Failed to generate any routines")
