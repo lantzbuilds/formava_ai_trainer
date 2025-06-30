@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 import gradio as gr
 
 from app.config.database import Database
-from app.models.user import FitnessGoal, InjurySeverity, Sex, UserProfile
+from app.models.user import FitnessGoal, InjurySeverity, Sex, UnitSystem, UserProfile
 from app.services.hevy_api import HevyAPI
 from app.utils.crypto import encrypt_api_key
 from app.utils.units import inches_to_cm, lbs_to_kg
@@ -72,6 +72,11 @@ def register_view(
                 experience = gr.Dropdown(
                     label="Experience Level",
                     choices=["beginner", "intermediate", "advanced"],
+                )
+                preferred_units = gr.Dropdown(
+                    label="Preferred Units",
+                    choices=[unit.value for unit in UnitSystem],
+                    value=UnitSystem.IMPERIAL.value,
                 )
                 goals = gr.CheckboxGroup(
                     label="Fitness Goals", choices=[g.value for g in FitnessGoal]
@@ -187,6 +192,7 @@ def register_view(
             sex,
             age,
             experience,
+            preferred_units,
             goals,
             preferred_workout_days,
             preferred_workout_duration,
@@ -205,6 +211,7 @@ def register_view(
                 sex,
                 age,
                 experience,
+                preferred_units,
                 goals,
                 preferred_workout_days,
                 preferred_workout_duration,
@@ -253,6 +260,7 @@ def register_view(
                 sex,
                 age,
                 experience,
+                preferred_units,
                 goals,
                 preferred_workout_days,
                 preferred_workout_duration,
@@ -285,6 +293,7 @@ def register_view(
             sex,
             age,
             experience,
+            preferred_units,
             goals,
             preferred_workout_days,
             preferred_workout_duration,
@@ -345,6 +354,7 @@ def register_view(
                     experience_level=experience,
                     preferred_workout_days=preferred_workout_days,
                     preferred_workout_duration=preferred_workout_duration,
+                    preferred_units=UnitSystem(preferred_units),
                     hevy_api_key=encrypted_key,
                     injuries=injuries,
                 )
