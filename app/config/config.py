@@ -8,10 +8,10 @@ logger = logging.getLogger(__name__)
 
 # Load environment variables in order of precedence
 env_files = [
-    ".env.local",  # Local development overrides
     (
         ".env.production" if os.getenv("ENV") == "production" else ".env"
     ),  # Default env files
+    ".env.local",  # Local development overrides
 ]
 
 logger.info("Attempting to load environment files...")
