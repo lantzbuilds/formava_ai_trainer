@@ -666,3 +666,25 @@ class ExerciseVectorStore:
         except Exception as e:
             logger.error(f"Error searching workout history: {str(e)}")
             return []
+
+    def get_all_exercise_ids_and_names(self) -> (set, dict):
+        """
+        Return a set of all valid exercise_template_ids and a mapping from lowercased name/title to id.
+        """
+        # Get all documents in the vector store
+        try:
+            results = self.vectorstore.get(include=["metadatas"])
+            valid_ids = set()
+            name_to_id = {}
+            if results and "metadatas" in results:
+                for metadata in results["metadatas"]:
+                    ex_id = metadata.get("exercise_template_id")
+                    name = metadata.get("title") or metadata.get("name")
+                    if ex_id:
+                        valid_ids.add(ex_id)
+                    if name and ex_id:
+                        name_to_id[name.lower()] = ex_id
+            return valid_ids, name_to_id
+        except Exception as e:
+            logger.error(f"Error getting all exercise ids and names: {str(e)}")
+            return set(), {}
