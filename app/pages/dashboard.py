@@ -46,6 +46,7 @@ def dashboard_view(state):
         sync_status = gr.Markdown("")
         is_syncing = gr.State(False)
         sync_status_timer = gr.Timer(value=2.0, active=True)
+        refresh_needed = gr.State(False)
 
         # Add a hidden button for initial data loading
         load_data_btn = gr.Button("Load Data", visible=False)
@@ -63,6 +64,7 @@ def dashboard_view(state):
                     sync_hevy_data(user_state, sync_type)
                     SYNC_STATUS["status"] = "complete"
                 except Exception as e:
+                    logger.error(f"Error syncing workouts: {e}", exc_info=True)
                     SYNC_STATUS["status"] = "error"
 
             SYNC_STATUS["status"] = "syncing"
@@ -72,15 +74,24 @@ def dashboard_view(state):
         def poll_sync_status():
             status = SYNC_STATUS["status"]
             if status == "syncing":
-                return gr.update(value="Syncing workouts...")
+                return gr.update(value="Syncing workouts..."), False
             elif status == "complete":
                 SYNC_STATUS["status"] = "idle"
-                return gr.update(value="Sync complete!")
+                return gr.update(value="Sync complete!"), True
             elif status == "error":
                 SYNC_STATUS["status"] = "idle"
-                return gr.update(value="Sync failed!")
+                return gr.update(value="Sync failed!"), True
             else:
-                return gr.update(value="")
+                return gr.update(value=""), False
+
+        def handle_refresh_change(refresh_flag, user_state):
+            if refresh_flag:
+                dashboard_updates = update_dashboard(user_state)
+                # Reset refresh_needed to False after update
+                return (False, *dashboard_updates)
+            else:
+                # No update needed
+                return (False,) + (gr.update(),) * 7
 
         # TODO: This method is too long and needs to be refactored
         def update_dashboard(user_state):
@@ -88,11 +99,9 @@ def dashboard_view(state):
             logger.info(f"User state type: {type(user_state)}")
             logger.info(f"User state value: {user_state}")
             logger.info(f"User state has value attr: {hasattr(user_state, 'value')}")
-            if hasattr(user_state, "value"):
-                logger.info(f"User state value: {user_state.value}")
 
-            if not user_state:
-                logger.warning("No user state provided to dashboard")
+            if "id" not in user_state:
+                logger.warning("No user id in user_state")
                 return (
                     gr.update(value="Please log in to view your dashboard"),
                     gr.update(value="### Total Workouts\nPlease log in to view stats"),
@@ -111,11 +120,7 @@ def dashboard_view(state):
 
             try:
                 # Get user profile
-                user_id = (
-                    user_state.value.get("id")
-                    if hasattr(user_state, "value")
-                    else user_state.get("id")
-                )
+                user_id = user_state["id"]
                 logger.info(f"Extracted user ID: {user_id}")
                 if not user_id:
                     logger.error("No user ID found in state")
@@ -315,7 +320,23 @@ def dashboard_view(state):
         sync_status_timer.tick(
             fn=poll_sync_status,
             inputs=[],
-            outputs=[sync_status],
+            outputs=[sync_status, refresh_needed],
+        )
+
+        # When refresh_needed changes to True, update dashboard and reset refresh_needed
+        refresh_needed.change(
+            fn=handle_refresh_change,
+            inputs=[refresh_needed, state["user_state"]],
+            outputs=[
+                refresh_needed,
+                welcome_message,
+                total_workouts,
+                avg_workouts,
+                last_workout,
+                workout_streak,
+                goals_section,
+                injuries_section,
+            ],
         )
 
         # Add logging to help debug state issues
@@ -338,4 +359,5 @@ def dashboard_view(state):
             sync_status,
             is_syncing,
             sync_status_timer,
+            refresh_needed,
         )

@@ -22,6 +22,7 @@ chromadb = "==0.4.22"
 tiktoken = "*"
 gradio = "*"
 watchdog = "*"
+pytest = "*"
 
 [dev-packages]
 black = "*"

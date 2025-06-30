@@ -17,7 +17,6 @@ def create_workout_views(db):
             }
         }
         """,
-        "reduce": "_stats",
     }
 
     # View for finding workouts by exercise
@@ -37,14 +36,13 @@ def create_workout_views(db):
             }
         }
         """,
-        "reduce": "_stats",
     }
 
     # View for workout statistics (latest version)
     stats_view = {
         "map": """
         function(doc) {
-            if (doc.type === 'workout' && doc.exercises) {
+            if (doc.type === 'workout' && doc.user_id && doc.start_time && doc.exercises) {
                 var totalSets = 0;
                 var totalExercises = doc.exercises.length;
                 var totalWeight = 0;
@@ -57,14 +55,14 @@ def create_workout_views(db):
                         if (set.reps) totalReps += set.reps;
                     });
                 });
-                emit(doc.user_id, {
+                emit([doc.user_id, doc.start_time], {
                     workout_id: doc._id,
                     title: doc.title,
                     total_exercises: totalExercises,
                     total_sets: totalSets,
                     total_weight: totalWeight,
                     total_reps: totalReps,
-                    duration: (new Date(doc.end_time) - new Date(doc.start_time)) / 1000 / 60, // in minutes
+                    duration: (new Date(doc.end_time) - new Date(doc.start_time)) / 1000 / 60,
                     count: 1,
                     last_workout_date: lastWorkoutDate
                 });
@@ -72,7 +70,7 @@ def create_workout_views(db):
         }
         """,
         "reduce": """
-        function(keys, values, rereduce) {
+       function(keys, values, rereduce) {
             var result = {
                 total_workouts: 0,
                 total_exercises: 0,
@@ -83,14 +81,15 @@ def create_workout_views(db):
                 last_workout_date: null
             };
             values.forEach(function(value) {
-                result.total_workouts += value.count || 1;
+                result.total_workouts += value.count || value.total_workouts || 1;
                 result.total_exercises += value.total_exercises || 0;
                 result.total_sets += value.total_sets || 0;
                 result.total_weight += value.total_weight || 0;
                 result.total_reps += value.total_reps || 0;
-                result.total_duration += value.duration || 0;
-                if (!result.last_workout_date || value.last_workout_date > result.last_workout_date) {
-                    result.last_workout_date = value.last_workout_date;
+                result.total_duration += value.duration || value.total_duration || 0;
+                var date = value.last_workout_date;
+                if (!result.last_workout_date || (date && date > result.last_workout_date)) {
+                    result.last_workout_date = date;
                 }
             });
             return result;
@@ -113,8 +112,8 @@ def create_workout_views(db):
     user_view = {
         "map": """
         function(doc) {
-            if (doc.type === 'workout' && doc.user_id) {
-                emit(doc.user_id, doc);
+            if (doc.type === 'workout' && doc.user_id && doc.start_time) {
+                emit([doc.user_id, doc.start_time], doc);
             }
         }
         """,

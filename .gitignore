@@ -59,3 +59,7 @@ vector_store/
 data/vectorstore/embeddings_cache/
 data/vectorstore/**/*.bin
 
+app/scripts/update_workout_user_ids.py
+
+couchdb/local.ini
+

@@ -1,4 +1,5 @@
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 
 import gradio as gr
@@ -16,7 +17,16 @@ logger = logging.getLogger(__name__)
 db = Database()
 
 
-def register_view(state):
+def register_view(
+    state,
+    register_nav_button,
+    login_nav_button,
+    landing_nav_button,
+    dashboard_nav_button,
+    ai_recs_nav_button,
+    profile_nav_button,
+    logout_nav_button,
+):
     with gr.Column():
         gr.Markdown("## Register")
 
@@ -166,7 +176,105 @@ def register_view(state):
             register_button = gr.Button("Register", variant="primary")
             error_message = gr.Markdown(visible=False)
 
-        def handle_register(
+        def handle_register_and_route(
+            username,
+            email,
+            password,
+            confirm_password,
+            height_feet,
+            height_inches,
+            weight_lbs,
+            sex,
+            age,
+            experience,
+            goals,
+            preferred_workout_days,
+            preferred_workout_duration,
+            injuries,
+            hevy_api_key,
+            user_state,
+        ):
+            user, error_msg, encrypted_key = page_handle_register(
+                username,
+                email,
+                password,
+                confirm_password,
+                height_feet,
+                height_inches,
+                weight_lbs,
+                sex,
+                age,
+                experience,
+                goals,
+                preferred_workout_days,
+                preferred_workout_duration,
+                injuries,
+                hevy_api_key,
+            )
+            if user is None or not isinstance(user, dict) or "id" not in user:
+                error_text = (
+                    error_msg
+                    if error_msg
+                    else "Registration failed. Please check your input and try again."
+                )
+                return (
+                    {},
+                    *state["update_nav_visibility"](None),
+                    "register",
+                    gr.update(value=error_text, visible=True),
+                )
+            # Registration successful
+            if encrypted_key:
+                import threading
+
+                from app.services.sync import sync_hevy_data
+
+                threading.Thread(
+                    target=sync_hevy_data, args=(user,), daemon=True
+                ).start()
+            return (
+                user,
+                *state["update_nav_visibility"](user),
+                "dashboard",
+                gr.update(value="", visible=False),
+            )
+
+        # Register button click event (moved from routes.py)
+        register_button.click(
+            fn=handle_register_and_route,
+            inputs=[
+                username,
+                email,
+                password,
+                confirm_password,
+                height_feet,
+                height_inches,
+                weight_lbs,
+                sex,
+                age,
+                experience,
+                goals,
+                preferred_workout_days,
+                preferred_workout_duration,
+                injuries,
+                hevy_api_key,
+                state["user_state"],
+            ],
+            outputs=[
+                state["user_state"],
+                register_nav_button,
+                login_nav_button,
+                landing_nav_button,
+                dashboard_nav_button,
+                ai_recs_nav_button,
+                profile_nav_button,
+                logout_nav_button,
+                state["current_page"],
+                error_message,
+            ],
+        )
+
+        def page_handle_register(
             username,
             email,
             password,
@@ -185,31 +293,45 @@ def register_view(state):
         ):
             try:
                 if password != confirm_password:
-                    return None, gr.update(value="Passwords do not match", visible=True)
-
+                    return (
+                        {},
+                        gr.update(value="Passwords do not match", visible=True),
+                        None,
+                    )
                 # Check if username already exists
                 if db.username_exists(username):
-                    return None, gr.update(
-                        value="Username already exists. Please choose a different username.",
-                        visible=True,
+                    return (
+                        {},
+                        gr.update(
+                            value="Username already exists. Please choose a different username.",
+                            visible=True,
+                        ),
+                        None,
                     )
-
                 # Convert height to cm
                 height_cm = inches_to_cm(height_feet * 12 + height_inches)
                 # Convert weight to kg
                 weight_kg = lbs_to_kg(weight_lbs)
-
-                # Handle API key encryption
+                # Handle API key logic
+                ENV = os.getenv("ENV", "development")
                 encrypted_key = None
+                if not hevy_api_key or not hevy_api_key.strip():
+                    if ENV in ["development", "beta"]:
+                        default_key = os.getenv("HEVY_API_KEY")
+                        if default_key:
+                            hevy_api_key = default_key
                 if hevy_api_key and hevy_api_key.strip():
                     try:
                         encrypted_key = encrypt_api_key(hevy_api_key)
                     except Exception as e:
-                        return None, gr.update(
-                            value=f"Error encrypting Hevy API key: {str(e)}",
-                            visible=True,
+                        return (
+                            {},
+                            gr.update(
+                                value=f"Error encrypting Hevy API key: {str(e)}",
+                                visible=True,
+                            ),
+                            None,
                         )
-
                 # Create new user
                 new_user = UserProfile.create_user(
                     username=username,
@@ -226,42 +348,18 @@ def register_view(state):
                     hevy_api_key=encrypted_key,
                     injuries=injuries,
                 )
-
                 # Save to database
                 user_dict = new_user.model_dump()
                 doc_id, doc_rev = db.save_document(user_dict)
-
                 # Return user object for state management
                 user = {"id": doc_id, "username": username, "email": email}
-
-                return user, gr.update(visible=False)
-
+                return user, gr.update(visible=False), encrypted_key
             except Exception as e:
                 logger.error(f"Registration failed: {str(e)}", exc_info=True)
-                return None, gr.update(
-                    value=f"Registration failed: {str(e)}", visible=True
+                return (
+                    {},
+                    gr.update(value=f"Registration failed: {str(e)}", visible=True),
+                    None,
                 )
 
-        register_button.click(
-            fn=handle_register,
-            inputs=[
-                username,
-                email,
-                password,
-                confirm_password,
-                height_feet,
-                height_inches,
-                weight_lbs,
-                sex,
-                age,
-                experience,
-                goals,
-                preferred_workout_days,
-                preferred_workout_duration,
-                injuries,
-                hevy_api_key,
-            ],
-            outputs=[state["user_state"], error_message],
-        )
-
-        return register_button, error_message
+        return register_button, error_message, page_handle_register

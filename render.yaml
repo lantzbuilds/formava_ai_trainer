@@ -1,12 +1,15 @@
 services:
   - type: web
-    name: formava-ai-trainer
+    name: formava-ai-trainer-prod
     runtime: docker
     region: oregon
-    plan: free
+    plan: starter
     dockerfilePath: ./Dockerfile
     healthCheckPath: /
+    branch: production
     envVars:
+      - key: ENV
+        value: production
       - key: PYTHON_VERSION
         value: 3.11.0
       - key: COUCHDB_URL
@@ -16,4 +19,40 @@ services:
       - key: JWT_SECRET
         sync: false
       - key: HEVY_API_KEY
+        sync: false
+
+  - type: web
+    name: formava-ai-trainer-staging
+    runtime: docker
+    region: oregon
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+    branch: main
+    envVars:
+      - key: ENV
+        value: staging
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: COUCHDB_URL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: HEVY_API_KEY
+        sync: false
+
+  - type: web
+    name: formava-ai-trainer-staging-db
+    runtime: docker
+    region: oregon
+    plan: starter
+    dockerfilePath: ./Dockerfile.couchdb
+    healthCheckPath: /
+    branch: main
+    envVars:
+      - key: COUCHDB_USER
+        sync: false
+      - key: COUCHDB_PASSWORD
         sync: false

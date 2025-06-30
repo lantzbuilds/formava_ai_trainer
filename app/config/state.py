@@ -14,7 +14,7 @@ def setup_state(app):
     with app:
         # Global state
         current_page = gr.State("landing")
-        user_state = gr.State(None)  # Store user session data
+        user_state = gr.State({})  # Store user session data
 
         def update_visibility(page):
             """Update visibility of blocks and navigation button states."""
