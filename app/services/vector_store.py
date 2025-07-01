@@ -667,7 +667,7 @@ class ExerciseVectorStore:
             logger.error(f"Error searching workout history: {str(e)}")
             return []
 
-    def get_all_exercise_ids_and_names(self) -> (set, dict):
+    def get_all_exercise_ids_and_names(self) -> tuple[set, dict]:
         """
         Return a set of all valid exercise_template_ids and a mapping from lowercased name/title to id.
         """
