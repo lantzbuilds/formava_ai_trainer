@@ -156,6 +156,9 @@ def ai_recs_view(state):
                         "experience_level": user.experience_level,
                         "fitness_goals": [g.value for g in user.fitness_goals],
                         "preferred_workout_duration": user.preferred_workout_duration,
+                        "preferred_units": getattr(
+                            user.preferred_units, "value", "imperial"
+                        ),
                         "injuries": [
                             {
                                 "description": i.description,
@@ -193,7 +196,9 @@ def ai_recs_view(state):
                     )
                     for routine in routine_folder["routines"]:
                         display_text += "---\n"
-                        display_text += format_routine_markdown(routine)
+                        display_text += format_routine_markdown(
+                            routine, getattr(user.preferred_units, "value", "imperial")
+                        )
                     return gr.update(value=display_text), False, gr.update(active=False)
                 else:
                     return (
