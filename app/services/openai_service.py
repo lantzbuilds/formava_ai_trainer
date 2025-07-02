@@ -17,6 +17,7 @@ from app.services.hevy_api import HevyAPI
 from app.services.routine_folder_builder import RoutineFolderBuilder
 from app.services.vector_store import ExerciseVectorStore
 from app.utils.crypto import decrypt_api_key
+from app.utils.units import convert_weight_for_display, get_weight_unit_label
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -176,7 +177,11 @@ class OpenAIService:
         fitness_goals = user_profile["fitness_goals"]
         injuries = user_profile.get("injuries", [])
         preferred_duration = user_profile.get("preferred_workout_duration", 60)
+        preferred_units = user_profile.get("preferred_units", "imperial")
         split_type = context.get("generation_preferences", {}).get("split_type", "auto")
+
+        # Get weight unit label for display
+        weight_unit = get_weight_unit_label(preferred_units)
 
         # Format injuries for the prompt
         injury_text = (
@@ -191,12 +196,83 @@ class OpenAIService:
             else "None"
         )
 
-        # Format similar workouts for the prompt
+        # Format similar workouts with detailed exercise history in user's preferred units
         workout_history_text = ""
         if similar_workouts:
-            workout_history_text = "\n\nSimilar workouts from user's history:\n"
-            for workout in similar_workouts:
-                workout_history_text += f"- {workout['title']} ({workout['start_time']}): {workout['exercise_count']} exercises\n"
+            workout_history_text = (
+                "\n\nRecent workout history (weights shown in your preferred units):\n"
+            )
+
+            # Get detailed workout history from database
+            user_id = context.get("user_id")
+            if user_id:
+                from datetime import datetime, timedelta, timezone
+
+                from app.config.database import Database
+
+                db = Database()
+                end_date = datetime.now(timezone.utc)
+                start_date = end_date - timedelta(days=30)
+                detailed_workouts = db.get_user_workout_history(
+                    user_id, start_date, end_date
+                )
+
+                # Show the most recent 3-5 workouts with exercise details
+                recent_workouts = sorted(
+                    detailed_workouts,
+                    key=lambda w: w.get("start_time", ""),
+                    reverse=True,
+                )[:5]
+
+                for workout in recent_workouts:
+                    workout_date = workout.get("start_time", "Unknown date")
+                    if isinstance(workout_date, str) and "T" in workout_date:
+                        workout_date = workout_date.split("T")[0]  # Just the date part
+
+                    workout_history_text += (
+                        f"\n**{workout.get('title', 'Untitled')}** ({workout_date}):\n"
+                    )
+
+                    for exercise in workout.get("exercises", [])[
+                        :6
+                    ]:  # Limit to 6 exercises per workout
+                        exercise_name = exercise.get("title", "Unknown Exercise")
+                        sets_info = []
+
+                        for set_data in exercise.get("sets", [])[
+                            :4
+                        ]:  # Limit to 4 sets per exercise
+                            weight_kg = set_data.get("weight_kg", 0)
+                            reps = set_data.get("reps", 0)
+                            duration = set_data.get("duration_seconds")
+                            distance = set_data.get("distance_meters")
+                            rpe = set_data.get("rpe")
+
+                            if duration is not None:
+                                set_info = f"{duration}s"
+                            elif distance is not None:
+                                set_info = f"{distance}m"
+                            elif weight_kg and reps:
+                                # Convert weight to user's preferred units for display
+                                display_weight = convert_weight_for_display(
+                                    weight_kg, preferred_units
+                                )
+                                set_info = (
+                                    f"{display_weight:.1f}{weight_unit} x {reps} reps"
+                                )
+                            elif reps:
+                                set_info = f"Bodyweight x {reps} reps"
+                            else:
+                                continue
+
+                            if rpe is not None:
+                                set_info += f" @ RPE {rpe}"
+                            sets_info.append(set_info)
+
+                        if sets_info:
+                            workout_history_text += (
+                                f"  - {exercise_name}: {' | '.join(sets_info)}\n"
+                            )
 
         # Add split type to user profile
         split_text = f"- Workout Split Type: {split_type}" if split_type else ""
@@ -210,6 +286,7 @@ class OpenAIService:
         - Fitness Goals: {', '.join(fitness_goals)}
         - Active Injuries: {injury_text}
         - Preferred Workout Duration: {preferred_duration} minutes
+        - Preferred Units: {preferred_units} (weights in history shown in {weight_unit})
         {split_text}
         {workout_history_text}
         
@@ -222,9 +299,10 @@ class OpenAIService:
         3. Avoids exercises that could aggravate injuries
         4. Includes appropriate rest periods
         5. Stays within the preferred workout duration
-        6. Builds upon the user's previous workout patterns
+        6. Builds upon the user's previous workout patterns shown above
         7. Follows a {split_type} split for this day (if applicable)
-        {f"8. Includes at least {preferred_duration // 10} minutes of cardio, using appropriate exercises from the list above, if possible." if include_cardio else ""}
+        8. Uses progressive overload based on the user's workout history
+        {f"9. Includes at least {preferred_duration // 10} minutes of cardio, using appropriate exercises from the list above, if possible." if include_cardio else ""}
         
         Return the response in JSON format that matches the Hevy API requirements:
         {{
@@ -267,16 +345,19 @@ class OpenAIService:
         - For standard exercises, use weight_kg and reps
         - Include rest_seconds between sets (typically 60-90 seconds for strength training)
         - While we can see RPE in the user's history, we cannot include it in the generated routine
+        - **CRITICAL: Always specify weight_kg in KILOGRAMS regardless of the user's preferred units**
+        - Use the workout history above to inform appropriate weight progression
         
         Exercise Requirements:
         - Weight training exercises MUST have at least 3 sets
-        - Weight training exercises MUST specify weight_kg for each set
+        - Weight training exercises MUST specify weight_kg for each set in KILOGRAMS
         - Warm-up sets should be included for compound movements
         - For strength-focused exercises, use 3-5 sets of 3-6 reps
         - For hypertrophy-focused exercises, use 3-4 sets of 8-12 reps
         - For endurance-focused exercises, use 2-3 sets of 12-15+ reps
         - Cardio exercises should specify either duration_seconds or distance_meters
         - Bodyweight exercises should still specify weight_kg as 0
+        - Base weight recommendations on the user's recent performance shown in the workout history
         
         Superset Guidelines:
         - Use supersets to pair complementary exercises (e.g., push/pull, agonist/antagonist)
