@@ -190,6 +190,7 @@ def profile_view(state):
                     gr.update(value=None),
                     gr.update(value=None),
                     gr.update(value="Please log in to view your profile"),
+                    gr.update(value="Please log in to view your profile"),
                 )
 
             try:
@@ -214,6 +215,7 @@ def profile_view(state):
                         gr.update(value=None),
                         gr.update(value=None),
                         gr.update(value="Error: User profile not found"),
+                        gr.update(value="Error: User profile not found"),
                     )
 
                 user_doc = db.get_document(user_id)
@@ -232,6 +234,7 @@ def profile_view(state):
                         gr.update(value=None),
                         gr.update(value=None),
                         gr.update(value=None),
+                        gr.update(value="Error: User profile not found"),
                         gr.update(value="Error: User profile not found"),
                     )
 
@@ -317,8 +320,9 @@ def profile_view(state):
                     gr.update(value=None),
                     gr.update(value=None),
                     gr.update(value=None),
+                    gr.update(value=None),
                     gr.update(value="Error loading profile"),
-                    gr.update(value=""),
+                    gr.update(value="Error loading profile"),
                 )
 
         def save_profile(
