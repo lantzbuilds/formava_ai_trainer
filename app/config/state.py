@@ -2,11 +2,35 @@
 State management for the AI Personal Trainer application.
 """
 
+import functools
 import logging
 
 import gradio as gr
 
 logger = logging.getLogger(__name__)
+
+
+def safe_state_operation(func):
+    """Decorator to safely handle state operations that might fail due to session issues."""
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "session" in error_msg or "404" in error_msg:
+                logger.warning(f"Session error in {func.__name__}: {e}")
+                # Return safe defaults based on function name
+                if "visibility" in func.__name__:
+                    # Return default visibility states
+                    return tuple([gr.update(visible=False) for _ in range(7)])
+                return None
+            else:
+                logger.error(f"Error in {func.__name__}: {e}", exc_info=True)
+                raise
+
+    return wrapper
 
 
 def setup_state(app):
@@ -16,6 +40,7 @@ def setup_state(app):
         current_page = gr.State("landing")
         user_state = gr.State({})  # Store user session data
 
+        @safe_state_operation
         def update_visibility(page):
             """Update visibility of blocks and navigation button states."""
             return (
@@ -35,6 +60,7 @@ def setup_state(app):
                 gr.update(variant="primary" if page == "profile" else "secondary"),
             )
 
+        @safe_state_operation
         def update_nav_visibility(user):
             """Update navigation visibility based on user state."""
             if user is None:
