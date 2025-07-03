@@ -293,6 +293,8 @@ class OpenAIService:
         Available Exercises:
         {json.dumps(exercises, indent=2)}
         
+        **NOTE:** Each exercise includes equipment information to help you determine appropriate weight assignments. Use this equipment data to follow the weight assignment rules below.
+        
         Please create a workout routine that:
         1. Targets the specified muscle groups effectively
         2. Is appropriate for the user's experience level
@@ -347,6 +349,7 @@ class OpenAIService:
         - While we can see RPE in the user's history, we cannot include it in the generated routine
         - **CRITICAL: Always specify weight_kg in KILOGRAMS regardless of the user's preferred units**
         - Use the workout history above to inform appropriate weight progression
+        {"- **WEIGHT SELECTION FOR IMPERIAL USERS**: Since this user prefers imperial units, choose weight_kg values that convert to practical 5-lb increments (e.g., 2.3kg=5lbs, 4.5kg=10lbs, 6.8kg=15lbs, 9.1kg=20lbs, 11.3kg=25lbs, 13.6kg=30lbs, 15.9kg=35lbs, 18.1kg=40lbs, 20.4kg=45lbs, 22.7kg=50lbs, 25.0kg=55lbs, 27.2kg=60lbs, 29.5kg=65lbs, 31.8kg=70lbs, 34.0kg=75lbs, 36.3kg=80lbs, etc.)" if preferred_units == "imperial" else ""}
         
         Exercise Requirements:
         - Weight training exercises MUST have at least 3 sets
@@ -358,6 +361,22 @@ class OpenAIService:
         - Cardio exercises should specify either duration_seconds or distance_meters
         - Bodyweight exercises should still specify weight_kg as 0
         - Base weight recommendations on the user's recent performance shown in the workout history
+        {"- **For imperial users**: Use the kg values listed above that convert to practical 5-lb increments rather than round kg numbers" if preferred_units == "imperial" else ""}
+        
+        **CRITICAL WEIGHT ASSIGNMENT RULES:**
+        - **Cable exercises** (e.g., "Lat Pulldown (Cable)", "Cable Row"): MUST use weight_kg > 0 (these use weight stacks)
+        - **Machine exercises** (e.g., "Leg Press", "Chest Press Machine"): MUST use weight_kg > 0 (these use weight stacks/plates)
+        - **Dumbbell/Barbell exercises**: MUST use weight_kg > 0 (these use free weights)
+        - **Bodyweight exercises** (e.g., "Pull Up", "Push Up", "Dips"): Use weight_kg = 0 ONLY if no added weight
+        - **Assisted bodyweight exercises**: Use weight_kg > 0 for assistance weight
+        - **Weighted bodyweight exercises**: Use weight_kg > 0 for added weight (e.g., weighted pull-ups)
+        - **Band exercises**: Use weight_kg = 0 (resistance bands don't use traditional weights)
+        
+        **EQUIPMENT-BASED WEIGHT GUIDELINES:**
+        - If equipment includes "cable", "machine", "dumbbell", "barbell": ALWAYS use weight_kg > 0
+        - If equipment is "bodyweight" or empty and exercise name suggests bodyweight: Use weight_kg = 0
+        - If equipment includes "band": Use weight_kg = 0
+        - When in doubt for resistance exercises: Use weight_kg > 0 rather than bodyweight
         
         Superset Guidelines:
         - Use supersets to pair complementary exercises (e.g., push/pull, agonist/antagonist)
@@ -409,6 +428,7 @@ class OpenAIService:
                         or ex.get("id"),
                         "name": ex.get("name") or ex.get("title"),
                         "muscle_groups": ex.get("muscle_groups", []),
+                        "equipment": ex.get("equipment", []),
                     }
                 )
 
