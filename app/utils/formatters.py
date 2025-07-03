@@ -65,7 +65,11 @@ def format_routine_markdown(
                 display_weight = convert_weight_for_display(
                     weight_kg, user_preferred_units
                 )
-                weight = f"{display_weight:.1f}{weight_unit}"
+                # Round to whole number if very close (within 0.1) to avoid floating point issues
+                if abs(display_weight - round(display_weight)) < 0.1:
+                    weight = f"{round(display_weight)}{weight_unit}"
+                else:
+                    weight = f"{display_weight:.1f}{weight_unit}"
             elif weight_kg == 0:
                 weight = "Bodyweight"
             else:
