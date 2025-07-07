@@ -3,6 +3,7 @@
 .env.local
 .env.*.local
 .env.production
+.env.staging
 
 # Python
 __pycache__/
@@ -70,6 +71,7 @@ couchdb/local.ini
 !requirements.txt
 !README.txt
 !README.md
+
 
 # Utility scripts output
 scripts/utilities/*.json
