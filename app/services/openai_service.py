@@ -17,7 +17,11 @@ from app.services.hevy_api import HevyAPI
 from app.services.routine_folder_builder import RoutineFolderBuilder
 from app.services.vector_store import ExerciseVectorStore
 from app.utils.crypto import decrypt_api_key
-from app.utils.units import convert_weight_for_display, get_weight_unit_label
+from app.utils.units import (
+    convert_weight_for_display,
+    get_weight_unit_label,
+    suggest_practical_weight_kg,
+)
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -349,11 +353,12 @@ class OpenAIService:
         - While we can see RPE in the user's history, we cannot include it in the generated routine
         - **CRITICAL: Always specify weight_kg in KILOGRAMS regardless of the user's preferred units**
         - Use the workout history above to inform appropriate weight progression
-        {"- **WEIGHT SELECTION FOR IMPERIAL USERS**: Since this user prefers imperial units, choose weight_kg values that convert to practical 5-lb increments (e.g., 2.3kg=5lbs, 4.5kg=10lbs, 6.8kg=15lbs, 9.1kg=20lbs, 11.3kg=25lbs, 13.6kg=30lbs, 15.9kg=35lbs, 18.1kg=40lbs, 20.4kg=45lbs, 22.7kg=50lbs, 25.0kg=55lbs, 27.2kg=60lbs, 29.5kg=65lbs, 31.8kg=70lbs, 34.0kg=75lbs, 36.3kg=80lbs, etc.)" if preferred_units == "imperial" else ""}
+        {"- **IMPERIAL WEIGHT REQUIREMENT**: You MUST ONLY use these exact kg values for weight_kg: 2.3, 4.5, 6.8, 9.1, 11.3, 13.6, 15.9, 18.1, 20.4, 22.7, 25.0, 27.2, 29.5, 31.8, 34.0, 36.3, 38.6, 40.8, 43.1, 45.4, 47.6, 49.9, 52.2, 54.4, 56.7, 59.0, 61.2, 63.5, 65.8, 68.0, 70.3, 72.6, 74.8, 77.1, 79.4, 81.6, 83.9, 86.2, 88.5, 90.7 (these convert to 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 125, 130, 135, 140, 145, 150, 155, 160, 165, 170, 175, 180, 185, 190, 195, 200 lbs respectively)" if preferred_units == "imperial" else ""}
         
         Exercise Requirements:
         - Weight training exercises MUST have at least 3 sets
         - Weight training exercises MUST specify weight_kg for each set in KILOGRAMS
+        {"- **IMPERIAL USERS ONLY**: Use ONLY the kg values from the list above (2.3, 4.5, 6.8, 9.1, 11.3, 13.6, 15.9, 18.1, 20.4, 22.7, 25.0, 27.2, 29.5, 31.8, 34.0, 36.3, 38.6, 40.8, 43.1, 45.4, 47.6, 49.9, 52.2, 54.4, 56.7, 59.0, 61.2, 63.5, 65.8, 68.0, 70.3, 72.6, 74.8, 77.1, 79.4, 81.6, 83.9, 86.2, 88.5, 90.7). DO NOT use any other kg values." if preferred_units == "imperial" else ""}
         - Warm-up sets should be included for compound movements
         - For strength-focused exercises, use 3-5 sets of 3-6 reps
         - For hypertrophy-focused exercises, use 3-4 sets of 8-12 reps
@@ -361,7 +366,6 @@ class OpenAIService:
         - Cardio exercises should specify either duration_seconds or distance_meters
         - Bodyweight exercises should still specify weight_kg as 0
         - Base weight recommendations on the user's recent performance shown in the workout history
-        {"- **For imperial users**: Use the kg values listed above that convert to practical 5-lb increments rather than round kg numbers" if preferred_units == "imperial" else ""}
         
         **CRITICAL WEIGHT ASSIGNMENT RULES:**
         - **Cable exercises** (e.g., "Lat Pulldown (Cable)", "Cable Row"): MUST use weight_kg > 0 (these use weight stacks)
@@ -548,6 +552,36 @@ class OpenAIService:
                         logger.info(
                             "Routine contained invalid IDs that were corrected by name."
                         )
+
+                # --- Begin imperial weight correction for imperial users ---
+                user_units = context.get("user_profile", {}).get(
+                    "preferred_units", "imperial"
+                )
+                if (
+                    user_units == "imperial"
+                    and "hevy_api" in routine_json
+                    and "routine" in routine_json["hevy_api"]
+                ):
+                    weight_corrected = False
+                    for exercise in routine_json["hevy_api"]["routine"]["exercises"]:
+                        for set_data in exercise.get("sets", []):
+                            weight_kg = set_data.get("weight_kg")
+                            if weight_kg is not None and weight_kg > 0:
+                                # Correct the weight to a practical imperial value
+                                corrected_weight = suggest_practical_weight_kg(
+                                    weight_kg, "imperial"
+                                )
+                                if (
+                                    abs(corrected_weight - weight_kg) > 0.01
+                                ):  # If correction needed
+                                    logger.info(
+                                        f"Corrected weight from {weight_kg}kg to {corrected_weight}kg for imperial user"
+                                    )
+                                    set_data["weight_kg"] = corrected_weight
+                                    weight_corrected = True
+
+                    if weight_corrected:
+                        logger.info("Routine weights were corrected for imperial user")
 
                 # Add exercise names to the routine data
                 if "hevy_api" in routine_json and "routine" in routine_json["hevy_api"]:
