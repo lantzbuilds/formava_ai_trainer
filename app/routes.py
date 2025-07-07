@@ -2,6 +2,7 @@
 Route configuration for the AI Personal Trainer application.
 """
 
+import functools
 import logging
 import threading
 
@@ -20,6 +21,26 @@ from app.state.sync_status import SYNC_STATUS
 
 logger = logging.getLogger(__name__)
 db = Database()
+
+
+def handle_session_errors(func):
+    """Decorator to handle session errors gracefully."""
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "session" in error_msg or "404" in error_msg:
+                logger.warning(f"Session error in {func.__name__}: {e}")
+                # Return safe defaults for session errors
+                return None
+            else:
+                logger.error(f"Error in {func.__name__}: {e}", exc_info=True)
+                raise
+
+    return wrapper
 
 
 def setup_routes(app, state):
@@ -125,6 +146,7 @@ def setup_routes(app, state):
                     height_inches,
                     weight_lbs,
                     experience,
+                    preferred_units,
                     goals,
                     workout_days,
                     workout_duration,
@@ -460,6 +482,7 @@ def setup_routes(app, state):
                 height_inches,
                 weight_lbs,
                 experience,
+                preferred_units,
                 goals,
                 workout_days,
                 workout_duration,

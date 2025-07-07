@@ -10,10 +10,25 @@ import gradio as gr
 import requests
 
 from app.config.database import Database
-from app.models.user import FitnessGoal, Injury, InjurySeverity, Sex, UserProfile
+from app.models.user import (
+    FitnessGoal,
+    Injury,
+    InjurySeverity,
+    Sex,
+    UnitSystem,
+    UserProfile,
+)
 from app.services.hevy_api import HevyAPI
 from app.utils.crypto import encrypt_api_key
-from app.utils.units import cm_to_inches, kg_to_lbs
+from app.utils.units import (
+    cm_to_inches,
+    convert_height_for_display,
+    convert_weight_for_display,
+    convert_weight_from_display,
+    get_height_unit_labels,
+    get_weight_unit_label,
+    kg_to_lbs,
+)
 
 # Configure logging
 
@@ -65,6 +80,12 @@ def profile_view(state):
                     choices=["beginner", "intermediate", "advanced"],
                     interactive=True,
                 )
+                preferred_units = gr.Dropdown(
+                    label="Preferred Units",
+                    choices=[unit.value for unit in UnitSystem],
+                    interactive=True,
+                )
+            with gr.Row():
                 goals = gr.CheckboxGroup(
                     label="Fitness Goals",
                     choices=[g.value for g in FitnessGoal],
@@ -169,6 +190,7 @@ def profile_view(state):
                     gr.update(value=None),
                     gr.update(value=None),
                     gr.update(value="Please log in to view your profile"),
+                    gr.update(value="Please log in to view your profile"),
                 )
 
             try:
@@ -193,6 +215,7 @@ def profile_view(state):
                         gr.update(value=None),
                         gr.update(value=None),
                         gr.update(value="Error: User profile not found"),
+                        gr.update(value="Error: User profile not found"),
                     )
 
                 user_doc = db.get_document(user_id)
@@ -212,18 +235,24 @@ def profile_view(state):
                         gr.update(value=None),
                         gr.update(value=None),
                         gr.update(value="Error: User profile not found"),
+                        gr.update(value="Error: User profile not found"),
                     )
 
                 user = UserProfile.from_dict(user_doc)
                 logger.info(f"Loaded profile for user: {user.username}")
 
-                # Convert height from cm to feet and inches
-                height_inches_total = cm_to_inches(user.height_cm)
-                height_feet_val = int(height_inches_total // 12)
-                height_inches_val = int(height_inches_total % 12)
+                # Get user's preferred unit system
+                unit_system = user.preferred_units.value
 
-                # Convert weight from kg to lbs
-                weight_lbs_val = kg_to_lbs(user.weight_kg)
+                # Convert height based on preferred units
+                height_val1, height_val2 = convert_height_for_display(
+                    user.height_cm, unit_system
+                )
+                height_label1, height_label2 = get_height_unit_labels(unit_system)
+
+                # Convert weight based on preferred units
+                weight_val = convert_weight_for_display(user.weight_kg, unit_system)
+                weight_label = get_weight_unit_label(unit_system)
 
                 # Format injuries list
                 injuries_text = "No injuries recorded"
@@ -256,10 +285,20 @@ def profile_view(state):
                     gr.update(value=user.email),
                     gr.update(value=user.age),
                     gr.update(value=user.sex.value),
-                    gr.update(value=height_feet_val),
-                    gr.update(value=height_inches_val),
-                    gr.update(value=weight_lbs_val),
+                    gr.update(
+                        value=height_val1,
+                        label=(
+                            f"Height ({height_label1})" if height_label1 else "Height"
+                        ),
+                    ),
+                    gr.update(
+                        value=height_val2,
+                        label=f"Height ({height_label2})" if height_label2 else "",
+                        visible=bool(height_label2),
+                    ),
+                    gr.update(value=weight_val, label=f"Weight ({weight_label})"),
                     gr.update(value=user.experience_level),
+                    gr.update(value=user.preferred_units.value),
                     gr.update(value=[g.value for g in user.fitness_goals]),
                     gr.update(value=user.preferred_workout_days),
                     gr.update(value=user.preferred_workout_duration),
@@ -281,20 +320,22 @@ def profile_view(state):
                     gr.update(value=None),
                     gr.update(value=None),
                     gr.update(value=None),
+                    gr.update(value=None),
                     gr.update(value="Error loading profile"),
-                    gr.update(value=""),
+                    gr.update(value="Error loading profile"),
                 )
 
         def save_profile(
             user_state,
             hevy_api_key=None,
-            weight_lbs=None,
+            weight_value=None,
             experience_level=None,
+            preferred_units=None,
             fitness_goals=None,
             preferred_workout_days=None,
             preferred_workout_duration=None,
         ):
-            """Save profile changes: Hevy API key, weight, experience level, fitness goals, workout days, or duration."""
+            """Save profile changes: Hevy API key, weight, experience level, preferred units, fitness goals, workout days, or duration."""
             logger.info("Saving profile with user state")
             logger.info(f"User state type: {type(user_state)}")
             logger.info(f"User state value: {user_state}")
@@ -336,29 +377,43 @@ def profile_view(state):
                     )
                     msg.append(f"Hevy API key saved successfully at {timestamp}")
 
+                # Update preferred units if provided
+                if preferred_units is not None:
+                    new_units = UnitSystem(preferred_units)
+                    if user.preferred_units != new_units:
+                        user.preferred_units = new_units
+                        updated = True
+                        msg.append(f"Preferred units updated to {preferred_units}")
+
                 # Update weight if provided
-                if weight_lbs is not None:
+                if weight_value is not None:
                     try:
-                        weight_lbs_val = float(weight_lbs)
+                        weight_display_val = float(weight_value)
                     except Exception:
                         return gr.update(value="Invalid weight value")
-                    # Only update if changed
-                    current_weight_lbs = kg_to_lbs(user.weight_kg)
-                    if abs(weight_lbs_val - current_weight_lbs) > 0.01:
-                        from app.utils.units import lbs_to_kg
 
-                        user.weight_kg = lbs_to_kg(weight_lbs_val)
-                        # Append to weight_history
+                    # Convert from display units to kg for storage
+                    weight_kg = convert_weight_from_display(
+                        weight_display_val, user.preferred_units.value
+                    )
+
+                    # Only update if changed (compare in kg)
+                    if abs(weight_kg - user.weight_kg) > 0.01:
+                        user.weight_kg = weight_kg
+                        # Append to weight_history (store in display units for user reference)
                         if not isinstance(user.weight_history, list):
                             user.weight_history = []
                         user.weight_history.append(
                             {
-                                "weight": weight_lbs_val,
+                                "weight": weight_display_val,
                                 "date": datetime.now(timezone.utc),
                             }
                         )
                         updated = True
-                        msg.append(f"Weight updated to {weight_lbs_val} lbs")
+                        unit_label = get_weight_unit_label(user.preferred_units.value)
+                        msg.append(
+                            f"Weight updated to {weight_display_val} {unit_label}"
+                        )
                     else:
                         msg.append("Weight unchanged")
 
@@ -613,6 +668,7 @@ def profile_view(state):
                 height_inches,
                 weight_lbs,
                 experience,
+                preferred_units,
                 goals,
                 workout_days,
                 workout_duration,
@@ -640,6 +696,7 @@ def profile_view(state):
                 height_inches,
                 weight_lbs,
                 experience,
+                preferred_units,
                 goals,
                 workout_days,
                 workout_duration,
@@ -650,7 +707,7 @@ def profile_view(state):
         # Update user state and record with new weight
         weight_lbs.change(
             fn=lambda user_state, weight_lbs_val: save_profile(
-                user_state, weight_lbs=weight_lbs_val
+                user_state, weight_value=weight_lbs_val
             ),
             inputs=[state["user_state"], weight_lbs],
             outputs=[],
@@ -662,6 +719,33 @@ def profile_view(state):
             ),
             inputs=[state["user_state"], experience],
             outputs=[],
+        )
+        # Update user state and record with new preferred units
+        preferred_units.change(
+            fn=lambda user_state, units_val: save_profile(
+                user_state, preferred_units=units_val
+            ),
+            inputs=[state["user_state"], preferred_units],
+            outputs=[],
+        ).then(
+            fn=on_profile_load,
+            inputs=[state["user_state"]],
+            outputs=[
+                username,
+                email,
+                age,
+                sex,
+                height_feet,
+                height_inches,
+                weight_lbs,
+                experience,
+                preferred_units,
+                goals,
+                workout_days,
+                workout_duration,
+                hevy_status,
+                injuries_list,
+            ],
         )
         # Update user state and record with new fitness goals
         goals.change(
@@ -713,6 +797,7 @@ def profile_view(state):
                 height_inches,
                 weight_lbs,
                 experience,
+                preferred_units,
                 goals,
                 workout_days,
                 workout_duration,
@@ -738,6 +823,7 @@ def profile_view(state):
                 height_inches,
                 weight_lbs,
                 experience,
+                preferred_units,
                 goals,
                 workout_days,
                 workout_duration,
@@ -762,6 +848,7 @@ def profile_view(state):
                 height_inches,
                 weight_lbs,
                 experience,
+                preferred_units,
                 goals,
                 workout_days,
                 workout_duration,
@@ -781,6 +868,7 @@ def profile_view(state):
             height_inches,
             weight_lbs,
             experience,
+            preferred_units,
             goals,
             workout_days,
             workout_duration,

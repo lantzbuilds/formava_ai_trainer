@@ -17,6 +17,11 @@ from app.services.hevy_api import HevyAPI
 from app.services.routine_folder_builder import RoutineFolderBuilder
 from app.services.vector_store import ExerciseVectorStore
 from app.utils.crypto import decrypt_api_key
+from app.utils.units import (
+    convert_weight_for_display,
+    get_weight_unit_label,
+    suggest_practical_weight_kg,
+)
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -176,7 +181,11 @@ class OpenAIService:
         fitness_goals = user_profile["fitness_goals"]
         injuries = user_profile.get("injuries", [])
         preferred_duration = user_profile.get("preferred_workout_duration", 60)
+        preferred_units = user_profile.get("preferred_units", "imperial")
         split_type = context.get("generation_preferences", {}).get("split_type", "auto")
+
+        # Get weight unit label for display
+        weight_unit = get_weight_unit_label(preferred_units)
 
         # Format injuries for the prompt
         injury_text = (
@@ -191,12 +200,86 @@ class OpenAIService:
             else "None"
         )
 
-        # Format similar workouts for the prompt
+        # Format similar workouts with detailed exercise history in user's preferred units
         workout_history_text = ""
         if similar_workouts:
-            workout_history_text = "\n\nSimilar workouts from user's history:\n"
-            for workout in similar_workouts:
-                workout_history_text += f"- {workout['title']} ({workout['start_time']}): {workout['exercise_count']} exercises\n"
+            workout_history_text = (
+                "\n\nRecent workout history (weights shown in your preferred units):\n"
+            )
+
+            # Get detailed workout history from database
+            user_id = context.get("user_id")
+            if user_id:
+                from datetime import datetime, timedelta, timezone
+
+                from app.config.database import Database
+
+                db = Database()
+                end_date = datetime.now(timezone.utc)
+                start_date = end_date - timedelta(days=30)
+                detailed_workouts = db.get_user_workout_history(
+                    user_id, start_date, end_date
+                )
+
+                # Show the most recent 3-5 workouts with exercise details
+                recent_workouts = sorted(
+                    detailed_workouts,
+                    key=lambda w: w.get("start_time", ""),
+                    reverse=True,
+                )[:5]
+
+                for workout in recent_workouts:
+                    workout_date = workout.get("start_time", "Unknown date")
+                    if isinstance(workout_date, str) and "T" in workout_date:
+                        workout_date = workout_date.split("T")[0]  # Just the date part
+
+                    workout_history_text += (
+                        f"\n**{workout.get('title', 'Untitled')}** ({workout_date}):\n"
+                    )
+
+                    for exercise in workout.get("exercises", [])[
+                        :6
+                    ]:  # Limit to 6 exercises per workout
+                        exercise_name = exercise.get("title", "Unknown Exercise")
+                        sets_info = []
+
+                        for set_data in exercise.get("sets", [])[
+                            :4
+                        ]:  # Limit to 4 sets per exercise
+                            weight_kg = set_data.get("weight_kg", 0)
+                            reps = set_data.get("reps", 0)
+                            duration = set_data.get("duration_seconds")
+                            distance = set_data.get("distance_meters")
+                            rpe = set_data.get("rpe")
+
+                            if duration is not None:
+                                set_info = f"{duration}s"
+                            elif distance is not None:
+                                set_info = f"{distance}m"
+                            elif weight_kg and reps:
+                                # Convert weight to user's preferred units for display
+                                display_weight = convert_weight_for_display(
+                                    weight_kg, preferred_units
+                                )
+                                set_info = (
+                                    f"{display_weight:.1f}{weight_unit} x {reps} reps"
+                                )
+                            elif reps:
+                                set_info = f"Bodyweight x {reps} reps"
+                            else:
+                                continue
+
+                            if rpe is not None:
+                                set_info += f" @ RPE {rpe}"
+                            sets_info.append(set_info)
+
+                        if sets_info:
+                            workout_history_text += (
+                                f"  - {exercise_name}: {' | '.join(sets_info)}\n"
+                            )
+
+        # Add split type to user profile
+        split_text = f"- Workout Split Type: {split_type}" if split_type else ""
 
         # Add split type to user profile
         split_text = f"- Workout Split Type: {split_type}" if split_type else ""
@@ -210,11 +293,14 @@ class OpenAIService:
         - Fitness Goals: {', '.join(fitness_goals)}
         - Active Injuries: {injury_text}
         - Preferred Workout Duration: {preferred_duration} minutes
+        - Preferred Units: {preferred_units} (weights in history shown in {weight_unit})
         {split_text}
         {workout_history_text}
         
         Available Exercises:
         {json.dumps(exercises, indent=2)}
+        
+        **NOTE:** Each exercise includes equipment information to help you determine appropriate weight assignments. Use this equipment data to follow the weight assignment rules below.
         
         Please create a workout routine that:
         1. Targets the specified muscle groups effectively
@@ -222,9 +308,10 @@ class OpenAIService:
         3. Avoids exercises that could aggravate injuries
         4. Includes appropriate rest periods
         5. Stays within the preferred workout duration
-        6. Builds upon the user's previous workout patterns
+        6. Builds upon the user's previous workout patterns shown above
         7. Follows a {split_type} split for this day (if applicable)
-        {f"8. Includes at least {preferred_duration // 10} minutes of cardio, using appropriate exercises from the list above, if possible." if include_cardio else ""}
+        8. Uses progressive overload based on the user's workout history
+        {f"9. Includes at least {preferred_duration // 10} minutes of cardio, using appropriate exercises from the list above, if possible." if include_cardio else ""}
         
         Return the response in JSON format that matches the Hevy API requirements:
         {{
@@ -267,16 +354,36 @@ class OpenAIService:
         - For standard exercises, use weight_kg and reps
         - Include rest_seconds between sets (typically 60-90 seconds for strength training)
         - While we can see RPE in the user's history, we cannot include it in the generated routine
+        - **CRITICAL: Always specify weight_kg in KILOGRAMS regardless of the user's preferred units**
+        - Use the workout history above to inform appropriate weight progression
+        {"- **IMPERIAL WEIGHT REQUIREMENT**: You MUST ONLY use these exact kg values for weight_kg: 2.3, 4.5, 6.8, 9.1, 11.3, 13.6, 15.9, 18.1, 20.4, 22.7, 25.0, 27.2, 29.5, 31.8, 34.0, 36.3, 38.6, 40.8, 43.1, 45.4, 47.6, 49.9, 52.2, 54.4, 56.7, 59.0, 61.2, 63.5, 65.8, 68.0, 70.3, 72.6, 74.8, 77.1, 79.4, 81.6, 83.9, 86.2, 88.5, 90.7 (these convert to 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 125, 130, 135, 140, 145, 150, 155, 160, 165, 170, 175, 180, 185, 190, 195, 200 lbs respectively)" if preferred_units == "imperial" else ""}
         
         Exercise Requirements:
         - Weight training exercises MUST have at least 3 sets
-        - Weight training exercises MUST specify weight_kg for each set
+        - Weight training exercises MUST specify weight_kg for each set in KILOGRAMS
+        {"- **IMPERIAL USERS ONLY**: Use ONLY the kg values from the list above (2.3, 4.5, 6.8, 9.1, 11.3, 13.6, 15.9, 18.1, 20.4, 22.7, 25.0, 27.2, 29.5, 31.8, 34.0, 36.3, 38.6, 40.8, 43.1, 45.4, 47.6, 49.9, 52.2, 54.4, 56.7, 59.0, 61.2, 63.5, 65.8, 68.0, 70.3, 72.6, 74.8, 77.1, 79.4, 81.6, 83.9, 86.2, 88.5, 90.7). DO NOT use any other kg values." if preferred_units == "imperial" else ""}
         - Warm-up sets should be included for compound movements
         - For strength-focused exercises, use 3-5 sets of 3-6 reps
         - For hypertrophy-focused exercises, use 3-4 sets of 8-12 reps
         - For endurance-focused exercises, use 2-3 sets of 12-15+ reps
         - Cardio exercises should specify either duration_seconds or distance_meters
         - Bodyweight exercises should still specify weight_kg as 0
+        - Base weight recommendations on the user's recent performance shown in the workout history
+        
+        **CRITICAL WEIGHT ASSIGNMENT RULES:**
+        - **Cable exercises** (e.g., "Lat Pulldown (Cable)", "Cable Row"): MUST use weight_kg > 0 (these use weight stacks)
+        - **Machine exercises** (e.g., "Leg Press", "Chest Press Machine"): MUST use weight_kg > 0 (these use weight stacks/plates)
+        - **Dumbbell/Barbell exercises**: MUST use weight_kg > 0 (these use free weights)
+        - **Bodyweight exercises** (e.g., "Pull Up", "Push Up", "Dips"): Use weight_kg = 0 ONLY if no added weight
+        - **Assisted bodyweight exercises**: Use weight_kg > 0 for assistance weight
+        - **Weighted bodyweight exercises**: Use weight_kg > 0 for added weight (e.g., weighted pull-ups)
+        - **Band exercises**: Use weight_kg = 0 (resistance bands don't use traditional weights)
+        
+        **EQUIPMENT-BASED WEIGHT GUIDELINES:**
+        - If equipment includes "cable", "machine", "dumbbell", "barbell": ALWAYS use weight_kg > 0
+        - If equipment is "bodyweight" or empty and exercise name suggests bodyweight: Use weight_kg = 0
+        - If equipment includes "band": Use weight_kg = 0
+        - When in doubt for resistance exercises: Use weight_kg > 0 rather than bodyweight
         
         Superset Guidelines:
         - Use supersets to pair complementary exercises (e.g., push/pull, agonist/antagonist)
@@ -328,6 +435,7 @@ class OpenAIService:
                         or ex.get("id"),
                         "name": ex.get("name") or ex.get("title"),
                         "muscle_groups": ex.get("muscle_groups", []),
+                        "equipment": ex.get("equipment", []),
                     }
                 )
 
@@ -447,6 +555,36 @@ class OpenAIService:
                         logger.info(
                             "Routine contained invalid IDs that were corrected by name."
                         )
+
+                # --- Begin imperial weight correction for imperial users ---
+                user_units = context.get("user_profile", {}).get(
+                    "preferred_units", "imperial"
+                )
+                if (
+                    user_units == "imperial"
+                    and "hevy_api" in routine_json
+                    and "routine" in routine_json["hevy_api"]
+                ):
+                    weight_corrected = False
+                    for exercise in routine_json["hevy_api"]["routine"]["exercises"]:
+                        for set_data in exercise.get("sets", []):
+                            weight_kg = set_data.get("weight_kg")
+                            if weight_kg is not None and weight_kg > 0:
+                                # Correct the weight to a practical imperial value
+                                corrected_weight = suggest_practical_weight_kg(
+                                    weight_kg, "imperial"
+                                )
+                                if (
+                                    abs(corrected_weight - weight_kg) > 0.01
+                                ):  # If correction needed
+                                    logger.info(
+                                        f"Corrected weight from {weight_kg}kg to {corrected_weight}kg for imperial user"
+                                    )
+                                    set_data["weight_kg"] = corrected_weight
+                                    weight_corrected = True
+
+                    if weight_corrected:
+                        logger.info("Routine weights were corrected for imperial user")
 
                 # Add exercise names to the routine data
                 if "hevy_api" in routine_json and "routine" in routine_json["hevy_api"]:

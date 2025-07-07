@@ -82,11 +82,12 @@ if gr.NO_RELOAD:
 def create_app():
     """Create and configure the Gradio application."""
     try:
-        # Create Gradio app
+        # Create Gradio app with better session handling
         demo = gr.Blocks(
             title="Formava AI Fitness",
             theme="soft",
             css_paths=["app/static/css/style.css"],
+            analytics_enabled=False,  # Disable analytics to reduce overhead
         )
 
         # Setup application state
@@ -110,12 +111,19 @@ demo = create_app()
 def main():
     """Main entry point for the application."""
     try:
+        # Get environment settings
+        env = os.getenv("ENV", "development")
+        is_production = env in ["production", "staging"]
+
         demo.launch(
             server_name="0.0.0.0",
             server_port=port,
-            share=True,
-            debug=True,
+            share=not is_production,  # Disable sharing in production
+            debug=not is_production,  # Disable debug in production
             favicon_path=favicon_path,
+            max_threads=40,  # Increase max threads for better concurrency
+            auth=None,  # Disable auth to avoid session conflicts
+            show_error=not is_production,  # Hide detailed errors in production
         )
     except Exception as e:
         logger.error(f"Application failed to start: {str(e)}", exc_info=True)

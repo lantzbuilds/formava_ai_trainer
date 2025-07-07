@@ -1,16 +1,25 @@
 import logging
 
 
-def format_routine_markdown(routine: dict) -> str:
+def format_routine_markdown(
+    routine: dict, user_preferred_units: str = "imperial"
+) -> str:
     """Format a workout routine in a readable markdown format.
 
     Args:
         routine: The routine dictionary from the API response
+        user_preferred_units: User's preferred unit system ("imperial" or "metric")
 
     Returns:
         Formatted markdown string
     """
     logger = logging.getLogger(__name__)
+
+    # Import unit conversion functions
+    from app.utils.units import convert_weight_for_display, get_weight_unit_label
+
+    # Get weight unit label for display
+    weight_unit = get_weight_unit_label(user_preferred_units)
     # Log the keys present in the routine data
     logger.info(f"Routine data keys: {list(routine.keys())}")
 
@@ -48,11 +57,23 @@ def format_routine_markdown(routine: dict) -> str:
         for i, set_data in enumerate(exercise.get("sets", []), 1):
             set_type = set_data.get("type", "normal").capitalize()
             reps = set_data.get("reps", "N/A")
-            weight = (
-                f"{set_data.get('weight_kg', 'N/A')}kg"
-                if set_data.get("weight_kg")
-                else "Bodyweight"
-            )
+
+            # Convert weight to user's preferred units for display
+            weight_kg = set_data.get("weight_kg")
+            if weight_kg is not None and weight_kg > 0:
+                display_weight = convert_weight_for_display(
+                    weight_kg, user_preferred_units
+                )
+                # Round to whole number if very close (within 0.1) to avoid floating point issues
+                if abs(display_weight - round(display_weight)) < 0.1:
+                    weight = f"{round(display_weight)}{weight_unit}"
+                else:
+                    weight = f"{display_weight:.1f}{weight_unit}"
+            elif weight_kg == 0:
+                weight = "Bodyweight"
+            else:
+                weight = "N/A"
+
             duration = (
                 f"{set_data.get('duration_seconds', 'N/A')}s"
                 if set_data.get("duration_seconds")

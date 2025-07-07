@@ -4,9 +4,9 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+import couchdb
 from dotenv import load_dotenv
 
-import couchdb
 from app.config.config import COUCHDB_DB, COUCHDB_PASSWORD, COUCHDB_URL, COUCHDB_USER
 
 from .views import create_exercise_views, create_user_views, create_workout_views
@@ -754,7 +754,9 @@ class Database:
             try:
                 existing = self.db[doc_id]
                 exercise_doc["_rev"] = existing["_rev"]
-            except couchdb.http.ResourceNotFound:
+            except (couchdb.http.ResourceNotFound, AttributeError) as e:
+                # Handle both missing document and client library compatibility issues
+                logger.info(f"Document {doc_id} not found or client error: {e}")
                 pass
 
             # Save to database
@@ -780,9 +782,9 @@ class Database:
                         logger.info(
                             f"Found {len(existing_exercises)} existing base exercises"
                         )
-            except couchdb.http.ResourceNotFound:
+            except (couchdb.http.ResourceNotFound, AttributeError) as e:
                 logger.info(
-                    f"No existing {'custom' if is_custom else 'base'} exercises found"
+                    f"No existing {'custom' if is_custom else 'base'} exercises found: {e}"
                 )
                 pass
 
