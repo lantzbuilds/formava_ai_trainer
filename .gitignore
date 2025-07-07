@@ -63,3 +63,19 @@ app/scripts/update_workout_user_ids.py
 
 couchdb/local.ini
 
+# Temporary files and generated data
+*.json
+*.csv
+*.txt
+!requirements.txt
+!README.txt
+!README.md
+
+# Utility scripts output
+scripts/utilities/*.json
+scripts/utilities/*.csv
+scripts/utilities/*.txt
+
+# Encryption keys (if generated locally)
+.encryption_key
+

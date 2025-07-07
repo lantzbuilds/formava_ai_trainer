@@ -6,22 +6,30 @@ from dotenv import load_dotenv
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Load environment variables in order of precedence
-env_files = [
-    ".env.local",  # Local development overrides
-    (
-        ".env.production" if os.getenv("ENV") == "production" else ".env"
-    ),  # Default env files
-]
+# Load environment variables based on ENV setting
+env = os.getenv("ENV", "development")
+env_file = (
+    ".env.production"
+    if env == "production"
+    else (
+        ".env.staging" if env == "staging" else ".env.local"
+    )  # Default to local development
+)
 
+logger.info(f"Environment: {env}")
 logger.info("Attempting to load environment files...")
-for env_file in env_files:
-    if os.path.exists(env_file):
-        logger.info(f"Loading environment from {env_file}")
-        load_dotenv(dotenv_path=env_file)
-        break
+
+if os.path.exists(env_file):
+    logger.info(f"Loading environment from {env_file}")
+    load_dotenv(dotenv_path=env_file)
+else:
+    logger.info(f"Environment file {env_file} not found")
+    # Fallback to .env if specific file doesn't exist
+    if os.path.exists(".env"):
+        logger.info("Falling back to .env")
+        load_dotenv(dotenv_path=".env")
     else:
-        logger.info(f"Environment file {env_file} not found")
+        logger.warning("No environment file found!")
 
 if os.getenv("ENV") == "production" and not os.getenv("COUCHDB_URL"):
     raise EnvironmentError("Missing COUCHDB_URL for production environment")
