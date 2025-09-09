@@ -154,44 +154,38 @@ def dashboard_view(state):
 
                 user = UserProfile.from_dict(user_doc)
 
-                # Get all workout stats (not just last 30 days for demo purposes)
-                stats = db.get_workout_stats(user_id)
-                logger.info(f"Workout stats: {stats}")
+                # Get workout stats for the last 30 days (for recent activity)
+                now = datetime.now(timezone.utc)
+                thirty_days_ago = now - timedelta(days=30)
+                recent_stats = db.get_workout_stats(user_id, thirty_days_ago, now)
 
-                # The stats view now returns a single aggregated result per user
-                if stats and len(stats) > 0:
-                    stats_data = stats[0]  # Get the first (and only) result
-                    total_workouts_count = stats_data.get("total_workouts", 0)
-                    # Calculate average workouts per week based on actual time span
-                    if stats_data.get("last_workout_date"):
-                        try:
-                            last_workout = datetime.fromisoformat(
-                                stats_data["last_workout_date"].replace("Z", "+00:00")
-                            )
-                            days_span = (
-                                datetime.now(timezone.utc) - last_workout
-                            ).days + 1
-                            weeks_span = max(days_span / 7, 1)  # At least 1 week
-                            avg_workouts_per_week = total_workouts_count / weeks_span
-                        except:
-                            avg_workouts_per_week = 0.0
-                    else:
-                        avg_workouts_per_week = 0.0
+                # Get all-time workout stats (for total counts)
+                all_time_stats = db.get_workout_stats(user_id)
+
+                logger.info(f"Recent stats (30 days): {recent_stats}")
+                logger.info(f"All-time stats: {all_time_stats}")
+
+                # Process recent stats (last 30 days)
+                if recent_stats and len(recent_stats) > 0:
+                    recent_data = recent_stats[0]
+                    recent_workouts_count = recent_data.get("total_workouts", 0)
+                    avg_workouts_per_week = (
+                        recent_workouts_count / 4.3
+                    )  # ~30 days / 7 days
                 else:
-                    total_workouts_count = 0
+                    recent_workouts_count = 0
                     avg_workouts_per_week = 0.0
 
-                # Get last workout date from stats
-                last_workout_date = None
-                if stats and len(stats) > 0:
-                    last_workout_date = stats_data.get("last_workout_date")
+                # Process all-time stats (for total counts)
+                if all_time_stats and len(all_time_stats) > 0:
+                    all_time_data = all_time_stats[0]
+                    total_workouts_count = all_time_data.get("total_workouts", 0)
+                    last_workout_date = all_time_data.get("last_workout_date")
+                else:
+                    total_workouts_count = 0
+                    last_workout_date = None
 
-                # For workout streak, we'd need individual workout data
-                # For now, we'll use a simplified approach
-                all_workouts = []
-
-                # If get_workouts is not available, you may need to implement it
-                # Display last workout date from stats
+                # Display last workout date from all-time stats
                 if last_workout_date:
                     try:
                         dt = dateutil.parser.parse(last_workout_date)
@@ -201,9 +195,16 @@ def dashboard_view(state):
                 else:
                     last_workout_str = "No workouts yet"
 
-                logger.info(f"Total workouts count: {total_workouts_count}")
-                logger.info(f"Avg workouts per week: {avg_workouts_per_week}")
+                logger.info(f"Total workouts count (all-time): {total_workouts_count}")
+                logger.info(f"Recent workouts count (30 days): {recent_workouts_count}")
+                logger.info(
+                    f"Avg workouts per week (based on recent): {avg_workouts_per_week}"
+                )
                 logger.info(f"Last workout date: {last_workout_str}")
+
+                # For workout streak, we'd need individual workout data
+                # For now, we'll use a simplified approach
+                all_workouts = []
 
                 # Calculate streak using the set of workout dates
                 dates_with_workouts = set()
@@ -250,10 +251,10 @@ def dashboard_view(state):
                 return (
                     gr.update(value=f"# Welcome back, {user.username}! 👋"),
                     gr.update(
-                        value=f"### Total Workouts\n{total_workouts_count} workouts in the last 30 days"
+                        value=f"### Total Workouts\n{total_workouts_count} workouts (all-time)\n{recent_workouts_count} in last 30 days"
                     ),
                     gr.update(
-                        value=f"### Average Workouts per Week\n{avg_workouts_per_week:.1f} workouts"
+                        value=f"### Average Workouts per Week\n{avg_workouts_per_week:.1f} workouts (recent)"
                     ),
                     gr.update(value=f"### Last Workout\n{last_workout_str}"),
                     gr.update(value=f"### Current Streak\n{streak} days"),
