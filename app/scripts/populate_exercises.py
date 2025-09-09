@@ -9,7 +9,13 @@ import sys
 from pathlib import Path
 
 # Add the project root to the path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
+# Also add the current directory to handle both development and production paths
+current_dir = Path(__file__).parent.parent
+if str(current_dir) not in sys.path:
+    sys.path.insert(0, str(current_dir))
 
 from app.config.database import Database
 from app.models.user import FitnessGoal, Sex, UnitSystem, UserProfile
