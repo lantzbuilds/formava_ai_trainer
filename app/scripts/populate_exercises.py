@@ -24,9 +24,9 @@ def create_demo_user(db, hevy_api_key=None):
     demo_user_id = "075ce2423576c5d4a0d8f883aa4ebf7e"
     demo_username = "demo_user"
 
-    # Check if demo user already exists
-    existing_user = db.get_user_by_id(demo_user_id)
-    if existing_user:
+    # Check if demo user already exists by ID
+    existing_user = db.get_document(demo_user_id)
+    if existing_user and existing_user.get("type") == "user_profile":
         print(
             f"✅ Demo user already exists: {existing_user.get('username', 'Unknown')}"
         )

@@ -224,9 +224,10 @@ def setup_routes(app, state):
                 logger.info("Attempting demo account login")
                 # Get demo user from database
                 demo_user_id = "075ce2423576c5d4a0d8f883aa4ebf7e"
-                user_doc = db.get_user_by_id(demo_user_id)
+                user_doc = db.get_document(demo_user_id)
 
-                if not user_doc:
+                # Check if it's a valid user document
+                if not user_doc or user_doc.get("type") != "user_profile":
                     logger.warning(f"Demo user not found with ID: {demo_user_id}")
                     # Try to find demo user by username as fallback
                     user_doc = db.get_user_by_username("demo_user")

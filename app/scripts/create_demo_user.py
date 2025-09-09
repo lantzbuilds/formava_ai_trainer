@@ -31,8 +31,8 @@ def create_demo_user():
         demo_password = "demo_password_123"
 
         # Check if demo user already exists by ID
-        existing_user = db.get_user_by_id(demo_user_id)
-        if existing_user:
+        existing_user = db.get_document(demo_user_id)
+        if existing_user and existing_user.get("type") == "user_profile":
             print(f"✅ Demo user already exists with ID: {demo_user_id}")
             print(f"   Username: {existing_user.get('username', 'Unknown')}")
             print(f"   Email: {existing_user.get('email', 'Unknown')}")
