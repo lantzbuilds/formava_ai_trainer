@@ -154,66 +154,50 @@ def dashboard_view(state):
 
                 user = UserProfile.from_dict(user_doc)
 
-                # Get workout stats for the last 30 days
-                now = datetime.now(timezone.utc)
-                thirty_days_ago = now - timedelta(days=30)
-                stats = db.get_workout_stats(user_id, thirty_days_ago, now)
+                # Get all workout stats (not just last 30 days for demo purposes)
+                stats = db.get_workout_stats(user_id)
                 logger.info(f"Workout stats: {stats}")
 
                 # The stats view now returns a single aggregated result per user
                 if stats and len(stats) > 0:
                     stats_data = stats[0]  # Get the first (and only) result
                     total_workouts_count = stats_data.get("total_workouts", 0)
-                    avg_workouts_per_week = (
-                        total_workouts_count / 4
-                    )  # Approximate for 30 days
+                    # Calculate average workouts per week based on actual time span
+                    if stats_data.get("last_workout_date"):
+                        try:
+                            last_workout = datetime.fromisoformat(
+                                stats_data["last_workout_date"].replace("Z", "+00:00")
+                            )
+                            days_span = (
+                                datetime.now(timezone.utc) - last_workout
+                            ).days + 1
+                            weeks_span = max(days_span / 7, 1)  # At least 1 week
+                            avg_workouts_per_week = total_workouts_count / weeks_span
+                        except:
+                            avg_workouts_per_week = 0.0
+                    else:
+                        avg_workouts_per_week = 0.0
                 else:
                     total_workouts_count = 0
                     avg_workouts_per_week = 0.0
 
-                # Fetch all workouts in the last 30 days for streak and last workout
-                # We'll use the Mango query approach for this
-                # (Assume you have a method to fetch all workout docs for the user and date range)
-                # We'll use the same get_workout_stats, but you may want a dedicated method for raw docs
-                # For now, let's assume get_workout_stats returns a list of dicts, each with last_workout_date
-                # If not, you may need to adjust this to fetch raw docs
-                # We'll use the stats list as a proxy for all workouts
+                # Get last workout date from stats
+                last_workout_date = None
+                if stats and len(stats) > 0:
+                    last_workout_date = stats_data.get("last_workout_date")
+
+                # For workout streak, we'd need individual workout data
+                # For now, we'll use a simplified approach
                 all_workouts = []
-                # Try to get all workout docs for the user in the date range
-                try:
-                    # If you have a method like db.get_workouts(user_id, start, end), use it
-                    # TODO: Implement this db.get_workouts method
-                    # Otherwise, fallback to stats (may need to adjust)
-                    all_workouts = [
-                        w
-                        for w in db.get_workouts_by_date_range(thirty_days_ago, now)
-                        if w.get("user_id") == user.id
-                    ]
-                except Exception:
-                    # Fallback: try to use stats if get_workouts is not available
-                    all_workouts = []
 
                 # If get_workouts is not available, you may need to implement it
-                # For now, let's check if all_workouts is empty, and if so, try to use stats
-                if not all_workouts:
-                    # Try to reconstruct from stats (may not have all dates)
-                    all_workouts = []
-                    for w in stats:
-                        dt = w.get("last_workout_date")
-                        if dt:
-                            all_workouts.append({"start_time": dt})
-
-                # Find the last workout date
-                last_workout_date = None
-                if all_workouts:
-                    # Get the max start_time
-                    last_workout_date = max(
-                        w["start_time"] for w in all_workouts if w.get("start_time")
-                    )
-
+                # Display last workout date from stats
                 if last_workout_date:
-                    dt = dateutil.parser.parse(last_workout_date)
-                    last_workout_str = dt.strftime("%Y-%m-%d")
+                    try:
+                        dt = dateutil.parser.parse(last_workout_date)
+                        last_workout_str = dt.strftime("%Y-%m-%d")
+                    except:
+                        last_workout_str = "Unknown date"
                 else:
                     last_workout_str = "No workouts yet"
 

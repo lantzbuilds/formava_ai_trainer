@@ -249,9 +249,9 @@ def setup_routes(app, state):
                 }
                 logger.info(f"Demo login successful, returning user state: {user}")
 
-                # Sync Hevy data for demo user
+                # Sync Hevy data for demo user (full sync to get all historical workouts)
                 threading.Thread(
-                    target=sync_hevy_data, args=(user,), daemon=True
+                    target=sync_hevy_data, args=(user, "full"), daemon=True
                 ).start()
 
                 # Update navigation and redirect to dashboard

@@ -112,14 +112,27 @@ class HevyAPI:
                 page_workouts = response_data.get("workouts", [])
 
                 # Filter workouts by date range if dates are provided
-                if start_str and end_str:
-                    filtered_workouts = [
-                        workout
-                        for workout in page_workouts
-                        if start_str <= workout.get("start_time", "") <= end_str
-                    ]
+                if start_date and end_date:
+                    filtered_workouts = []
+                    for workout in page_workouts:
+                        workout_start = workout.get("start_time", "")
+                        if workout_start:
+                            try:
+                                # Parse workout start time
+                                workout_dt = datetime.fromisoformat(
+                                    workout_start.replace("Z", "+00:00")
+                                )
+                                # Check if workout is within date range
+                                if start_date <= workout_dt <= end_date:
+                                    filtered_workouts.append(workout)
+                            except (ValueError, AttributeError) as e:
+                                logger.warning(
+                                    f"Could not parse workout start_time '{workout_start}': {e}"
+                                )
+                                # Include workout if we can't parse the date (better to include than exclude)
+                                filtered_workouts.append(workout)
                     logger.info(
-                        f"Filtered {len(filtered_workouts)} workouts by date range"
+                        f"Filtered {len(filtered_workouts)} workouts by date range (from {len(page_workouts)} total)"
                     )
                 else:
                     filtered_workouts = page_workouts
