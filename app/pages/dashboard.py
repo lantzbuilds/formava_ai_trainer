@@ -219,6 +219,7 @@ def dashboard_view(state):
                 # TODO: Refactor to robustly handle user timezone
                 # TODO: Refactor to show streaks longer than 30 days
                 streak = 0
+                now = datetime.now(timezone.utc)
                 current_date = now.date() - timedelta(days=1)
                 logger.info(f"Current date: {current_date}")
                 while True:
