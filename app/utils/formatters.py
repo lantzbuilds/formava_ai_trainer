@@ -20,7 +20,6 @@ def format_routine_markdown(
 
     # Get weight unit label for display
     weight_unit = get_weight_unit_label(user_preferred_units)
-
     # Log the keys present in the routine data
     logger.info(f"Routine data keys: {list(routine.keys())}")
 

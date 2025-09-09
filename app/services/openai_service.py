@@ -281,6 +281,9 @@ class OpenAIService:
         # Add split type to user profile
         split_text = f"- Workout Split Type: {split_type}" if split_type else ""
 
+        # Add split type to user profile
+        split_text = f"- Workout Split Type: {split_type}" if split_type else ""
+
         # Create the prompt
         prompt = f"""
         Create a {focus} workout routine for {day} that is appropriate for a {experience_level} level user.

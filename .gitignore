@@ -80,4 +80,3 @@ scripts/utilities/*.txt
 
 # Encryption keys (if generated locally)
 .encryption_key
-

@@ -4,19 +4,22 @@ FROM python:3.11-slim
 # Set working directory to project root
 WORKDIR /formava_ai_trainer
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+# Install system dependencies with retry logic and better error handling
+RUN apt-get update --fix-missing || apt-get update || true && \
+    apt-get install -y --no-install-recommends \
     build-essential \
     curl \
-    software-properties-common \
     git \
-    && rm -rf /var/lib/apt/lists/*
+    ca-certificates \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Copy requirements first to leverage Docker cache
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip3 install --no-cache-dir -r requirements.txt
+# Install Python dependencies with retry logic
+RUN pip3 install --upgrade pip && \
+    pip3 install --no-cache-dir --retries 3 --timeout 60 -r requirements.txt
 
 # Copy the rest of the application
 COPY . .
