@@ -95,23 +95,67 @@ def populate_exercises():
         encrypted_key = encrypt_api_key(hevy_api_key)
         hevy_api = HevyAPI(encrypted_key)
 
-        # Fetch exercises from Hevy
-        print("📊 Fetching exercises from Hevy API...")
-        exercise_list = hevy_api.get_exercises(page_size=1000)  # Get lots of exercises
+        # Fetch base exercises from Hevy
+        print("📊 Fetching all base exercises from Hevy API (paginated)...")
+        base_exercise_list = hevy_api.get_all_exercises(
+            max_pages=50, include_custom=False
+        )  # Get all base exercises
 
-        if not exercise_list.exercises:
-            print("❌ No exercises retrieved from Hevy API!")
+        if not base_exercise_list.exercises:
+            print("❌ No base exercises retrieved from Hevy API!")
             return False
 
-        print(f"✅ Retrieved {len(exercise_list.exercises)} exercises from Hevy")
+        print(
+            f"✅ Retrieved {len(base_exercise_list.exercises)} base exercises from Hevy"
+        )
 
-        # Save exercises to database
-        print("💾 Saving exercises to database...")
-        db.save_exercises(exercise_list.exercises)
+        # Save base exercises to database
+        print("💾 Saving base exercises to database...")
+        base_exercises_data = [
+            exercise.model_dump() for exercise in base_exercise_list.exercises
+        ]
+        db.save_exercises(base_exercises_data)
+
+        # Fetch custom exercises from the demo account
+        print("📊 Fetching custom exercises from demo account...")
+        custom_exercise_list = hevy_api.get_all_exercises(
+            max_pages=10, include_custom=True
+        )
+
+        custom_exercises_count = 0
+        if custom_exercise_list.exercises:
+            # Filter to only include custom exercises
+            custom_exercises = [
+                exercise
+                for exercise in custom_exercise_list.exercises
+                if exercise.is_custom
+            ]
+
+            if custom_exercises:
+                print(
+                    f"✅ Retrieved {len(custom_exercises)} custom exercises from demo account"
+                )
+                # Save custom exercises with demo user ID
+                custom_exercises_data = [
+                    exercise.model_dump() for exercise in custom_exercises
+                ]
+                demo_user_id = "075ce2423576c5d4a0d8f883aa4ebf7e"
+                db.save_exercises(
+                    custom_exercises_data, is_custom=True, user_id=demo_user_id
+                )
+                custom_exercises_count = len(custom_exercises)
+            else:
+                print("ℹ️  No custom exercises found in demo account")
+        else:
+            print("ℹ️  No custom exercises found in demo account")
+
+        total_exercises = len(base_exercise_list.exercises) + custom_exercises_count
 
         # Verify exercises were saved
         saved_exercises = db.get_all_exercises()
-        print(f"✅ Successfully saved {len(saved_exercises)} exercises to database")
+        print(
+            f"✅ Successfully saved {total_exercises} exercises to database ({len(base_exercise_list.exercises)} base + {custom_exercises_count} custom)"
+        )
 
         # Sample some exercises
         if saved_exercises:

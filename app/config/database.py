@@ -621,15 +621,51 @@ class Database:
             logger.error(f"Error getting exercises by muscle group: {str(e)}")
             return []
 
-    def get_all_exercises(self) -> List[Dict[str, Any]]:
+    def get_all_exercises(self, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """
-        Get all exercises from the database.
+        Get all exercises from the database, including base and custom exercises.
+
+        Args:
+            user_id: Optional user ID to include their custom exercises
 
         Returns:
             List of all exercise documents
         """
         try:
-            return [row.doc for row in self.db.view("exercises/all", include_docs=True)]
+            exercises = []
+
+            # First try to get individual exercise documents from the view
+            individual_exercises = [
+                row.doc for row in self.db.view("exercises/all", include_docs=True)
+            ]
+            exercises.extend(individual_exercises)
+
+            # Get base exercises from base_exercises document
+            base_doc = self.get_document("base_exercises")
+            if base_doc and base_doc.get("exercises"):
+                exercises.extend(base_doc["exercises"])
+                logger.info(f"Retrieved {len(base_doc['exercises'])} base exercises")
+
+            # Get custom exercises for the specific user if provided
+            if user_id:
+                custom_doc = self.get_document(f"custom_exercises_{user_id}")
+                if custom_doc and custom_doc.get("exercises"):
+                    exercises.extend(custom_doc["exercises"])
+                    logger.info(
+                        f"Retrieved {len(custom_doc['exercises'])} custom exercises for user {user_id}"
+                    )
+
+            # Remove duplicates based on exercise ID
+            seen_ids = set()
+            unique_exercises = []
+            for exercise in exercises:
+                exercise_id = exercise.get("id") or exercise.get("hevy_id")
+                if exercise_id and exercise_id not in seen_ids:
+                    seen_ids.add(exercise_id)
+                    unique_exercises.append(exercise)
+
+            logger.info(f"Retrieved {len(unique_exercises)} total unique exercises")
+            return unique_exercises
         except Exception as e:
             logger.error(f"Error getting all exercises: {str(e)}")
             return []
