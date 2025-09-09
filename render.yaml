@@ -7,6 +7,7 @@ services:
     dockerfilePath: ./Dockerfile
     healthCheckPath: /
     branch: production
+    preDeployCommand: cd /formava_ai_trainer && PYTHONPATH=/formava_ai_trainer python app/scripts/populate_exercises.py
     envVars:
       - key: ENV
         value: production
@@ -29,6 +30,7 @@ services:
     dockerfilePath: ./Dockerfile
     healthCheckPath: /
     branch: main
+    preDeployCommand: cd /formava_ai_trainer && PYTHONPATH=/formava_ai_trainer python app/scripts/populate_exercises.py
     envVars:
       - key: ENV
         value: staging
