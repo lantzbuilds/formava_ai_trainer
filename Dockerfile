@@ -9,7 +9,6 @@ RUN apt-get update --fix-missing || apt-get update || true && \
     apt-get install -y --no-install-recommends \
     build-essential \
     curl \
-    software-properties-common \
     git \
     ca-certificates \
     && apt-get clean \
