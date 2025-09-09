@@ -218,6 +218,59 @@ def setup_routes(app, state):
                     *state["update_visibility"]("login")[7:],  # button variants
                 )
 
+        def handle_demo_login(user_state):
+            """Handle demo account login."""
+            try:
+                logger.info("Attempting demo account login")
+                # Get demo user from database
+                demo_user_id = "075ce2423576c5d4a0d8f883aa4ebf7e"
+                user_doc = db.get_user_by_id(demo_user_id)
+
+                if not user_doc:
+                    logger.warning(f"Demo user not found with ID: {demo_user_id}")
+                    # Try to find demo user by username as fallback
+                    user_doc = db.get_user_by_username("demo_user")
+
+                if not user_doc:
+                    logger.error("Demo user not found in database!")
+                    return (
+                        {},  # user_state
+                        *state["update_nav_visibility"](None),  # nav buttons
+                        "login",  # current_page - redirect to login with error
+                        *state["update_visibility"]("login")[7:],  # button variants
+                    )
+
+                # Return user object for state management
+                user = {
+                    "id": user_doc["_id"],
+                    "username": user_doc["username"],
+                    "email": user_doc["email"],
+                }
+                logger.info(f"Demo login successful, returning user state: {user}")
+
+                # Sync Hevy data for demo user
+                threading.Thread(
+                    target=sync_hevy_data, args=(user,), daemon=True
+                ).start()
+
+                # Update navigation and redirect to dashboard
+                nav_updates = state["update_nav_visibility"](user)
+                return (
+                    user,  # user_state
+                    *nav_updates,  # nav buttons
+                    "dashboard",  # current_page
+                    *state["update_visibility"]("dashboard")[7:],  # button variants
+                )
+
+            except Exception as e:
+                logger.error(f"Demo login failed: {str(e)}", exc_info=True)
+                return (
+                    {},  # user_state
+                    *state["update_nav_visibility"](None),  # nav buttons
+                    "login",  # current_page
+                    *state["update_visibility"]("login")[7:],  # button variants
+                )
+
         def handle_logout(user_state):
             """Handle user logout."""
             return (
@@ -431,6 +484,48 @@ def setup_routes(app, state):
         login_button.click(
             fn=handle_login,
             inputs=[login_username, login_password, state["user_state"]],
+            outputs=[
+                state["user_state"],
+                register_nav_button,
+                login_nav_button,
+                landing_nav_button,
+                dashboard_nav_button,
+                ai_recs_nav_button,
+                profile_nav_button,
+                logout_nav_button,
+                state["current_page"],
+                register_nav_button,
+                login_nav_button,
+                landing_nav_button,
+                dashboard_nav_button,
+                ai_recs_nav_button,
+                profile_nav_button,
+            ],
+        ).then(
+            fn=lambda user_state, page: update_visibility_and_load(page, user_state),
+            inputs=[state["user_state"], state["current_page"]],
+            outputs=[
+                state["user_state"],
+                register_block,
+                login_block,
+                landing_block,
+                dashboard_block,
+                ai_recs_block,
+                profile_block,
+                state["current_page"],
+                register_nav_button,
+                login_nav_button,
+                landing_nav_button,
+                dashboard_nav_button,
+                ai_recs_nav_button,
+                profile_nav_button,
+            ],
+        )
+
+        # Connect demo account button
+        demo_btn.click(
+            fn=handle_demo_login,
+            inputs=[state["user_state"]],
             outputs=[
                 state["user_state"],
                 register_nav_button,

@@ -74,9 +74,24 @@ if gr.NO_RELOAD:
     # Bootstrap vectorstore if in production
     if os.getenv("ENV") == "production":
         logger.info("Bootstrapping vectorstore for production environment")
-        from app.scripts.bootstrap_vectorstore import bootstrap_vectorstore
+        try:
+            from app.scripts.bootstrap_vectorstore import bootstrap_vectorstore
 
-        bootstrap_vectorstore()
+            bootstrap_success = bootstrap_vectorstore()
+            if bootstrap_success:
+                logger.info("Vector store bootstrapped successfully!")
+            else:
+                logger.warning(
+                    "Vector store bootstrap failed - exercises may not be populated yet"
+                )
+                logger.warning(
+                    "Run 'python app/scripts/populate_exercises.py' to populate exercises"
+                )
+        except Exception as e:
+            logger.error(f"Vector store bootstrap failed: {e}")
+            logger.warning(
+                "App will continue without vector store - AI features may not work"
+            )
 
 
 def create_app():
