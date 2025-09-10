@@ -41,7 +41,9 @@ def create_demo_user(db, hevy_api_key=None):
     # Check by username as fallback
     existing_user = db.get_user_by_username(demo_username)
     if existing_user:
-        print(f"✅ Demo user exists with different ID: {existing_user['_id']}")
+        actual_id = existing_user["_id"]
+        print(f"✅ Demo user exists with different ID: {actual_id}")
+        print(f"💡 Note: Demo user ID is {actual_id}, not {demo_user_id}")
         return True
 
     try:
