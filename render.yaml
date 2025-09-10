@@ -7,6 +7,7 @@ services:
     dockerfilePath: ./Dockerfile
     healthCheckPath: /
     branch: production
+    preDeployCommand: ./scripts/deploy_populate.sh
     envVars:
       - key: ENV
         value: production
@@ -29,6 +30,7 @@ services:
     dockerfilePath: ./Dockerfile
     healthCheckPath: /
     branch: main
+    preDeployCommand: ./scripts/deploy_populate.sh
     envVars:
       - key: ENV
         value: staging

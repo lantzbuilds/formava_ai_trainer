@@ -29,7 +29,6 @@ services:
       - COUCHDB_SYSTEM_ADMIN_PASSWORD=${COUCHDB_PASSWORD:-dev_KTq29pZuEi1VsoNqf2mJMPTg}
     volumes:
       - couchdb_data:/opt/couchdb/data
-      - ./couchdb/local.ini:/opt/couchdb/etc/local.d/local.ini
     healthcheck:
       test: ["CMD", "curl", "-f", "http://${COUCHDB_USER:-ai_trainer_admin}:${COUCHDB_PASSWORD:-dev_KTq29pZuEi1VsoNqf2mJMPTg}@localhost:5984/"]
       interval: 10s

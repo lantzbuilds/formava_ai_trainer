@@ -38,12 +38,6 @@ def landing_page_view(state):
 
             return demo_user
 
-        # demo_btn.click(
-        #     fn=use_demo_account,
-        #     inputs=[],
-        #     outputs=[
-        #         state["user_state"],
-        #     ],
-        # )
+        # Note: demo_btn click handler is set up in routes.py
 
         return title, intro, logo, demo_btn, use_demo_account
