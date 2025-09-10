@@ -363,19 +363,29 @@ class RecentWorkoutSeeder:
 
     def seed_demo_user_workouts(self, days: int = 30) -> List[str]:
         """Generate recent workout history for the demo user."""
-        # Check if demo user exists
+        # First try to find by hardcoded ID
         demo_user = self.db.get_document(DEMO_USER_ID)
+
         if not demo_user:
-            logger.error(f"❌ Demo user with ID {DEMO_USER_ID} not found!")
+            # If not found by ID, try to find by username
+            logger.info(
+                f"Demo user not found by ID {DEMO_USER_ID}, searching by username..."
+            )
+            demo_user = self.db.get_user_by_username("demo_user")
+
+        if not demo_user:
+            logger.error("❌ Demo user not found by ID or username!")
             logger.error(
                 "Please run populate_exercises.py first to create the demo user."
             )
             return []
 
+        # Use the actual user ID from the database
+        actual_user_id = demo_user.get("_id") or demo_user.get("id")
         username = demo_user.get("username", "demo_user")
-        logger.info(f"✅ Found demo user: {username}")
+        logger.info(f"✅ Found demo user: {username} (ID: {actual_user_id})")
 
-        return self.seed_recent_workouts_for_user(DEMO_USER_ID, username, days)
+        return self.seed_recent_workouts_for_user(actual_user_id, username, days)
 
     def seed_test_user_workouts(self, days: int = 30) -> List[str]:
         """Generate recent workout history for the test user."""
