@@ -86,6 +86,7 @@ yarn-error.log*
 data/
 *.csv
 *.json
+!hevy_exercise_ids.json  # Include exercise IDs for seeding
 *.pkl
 
 # Scripts that are only for local development
