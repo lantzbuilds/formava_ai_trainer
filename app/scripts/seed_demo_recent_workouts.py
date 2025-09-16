@@ -59,19 +59,39 @@ TEST_USER_USERNAME = "test_user_staging"  # Test user for staging
 def load_hevy_exercise_ids():
     """Load the real Hevy exercise IDs from the JSON file."""
     try:
-        hevy_ids_path = project_root / "hevy_exercise_ids.json"
-        logger.info(f"Loading Hevy exercise IDs from: {hevy_ids_path}")
-        with open(hevy_ids_path, "r") as f:
-            data = json.load(f)
-            mapping = data.get("exercise_mapping", {})
-            logger.info(f"Loaded {len(mapping)} exercise IDs")
-            logger.info("Sample mappings:")
-            for name, id in list(mapping.items())[:5]:
-                logger.info(f"  {name}: {id}")
-            return mapping
+        # Try multiple possible locations for the file
+        possible_paths = [
+            project_root / "hevy_exercise_ids.json",  # Root directory
+            Path(__file__).parent.parent.parent
+            / "hevy_exercise_ids.json",  # Relative to script
+            Path("/formava_ai_trainer/hevy_exercise_ids.json"),  # Absolute path
+            Path("hevy_exercise_ids.json"),  # Current directory
+        ]
+
+        for path in possible_paths:
+            logger.info(f"Trying to load Hevy exercise IDs from: {path}")
+            if path.exists():
+                logger.info(f"Found exercise IDs file at: {path}")
+                with open(path, "r") as f:
+                    data = json.load(f)
+                    mapping = data.get("exercise_mapping", {})
+                    logger.info(f"Successfully loaded {len(mapping)} exercise IDs")
+                    logger.info("Sample mappings:")
+                    for name, id in list(mapping.items())[:5]:
+                        logger.info(f"  {name}: {id}")
+                    return mapping
+            else:
+                logger.warning(f"File not found at: {path}")
+
+        # If we get here, we couldn't find the file anywhere
+        logger.error("Could not find hevy_exercise_ids.json in any expected location")
+        logger.error(f"Current working directory: {os.getcwd()}")
+        logger.error(f"Script location: {Path(__file__).absolute()}")
+        return {}
     except Exception as e:
         logger.error(f"Failed to load Hevy exercise IDs: {e}")
         logger.error(f"Current working directory: {os.getcwd()}")
+        logger.error(f"Script location: {Path(__file__).absolute()}")
         return {}
 
 
