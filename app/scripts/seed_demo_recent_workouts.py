@@ -16,14 +16,28 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
+# Configure logging first
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
+
 # Add the project root to the path
 project_root = Path(__file__).parent.parent.parent
+logger.info(f"Project root path: {project_root}")
+logger.info(f"Project root absolute path: {project_root.absolute()}")
 sys.path.insert(0, str(project_root))
 
 # Also add the current directory to handle both development and production paths
 current_dir = Path(__file__).parent.parent
+logger.info(f"Current directory path: {current_dir}")
+logger.info(f"Current directory absolute path: {current_dir.absolute()}")
 if str(current_dir) not in sys.path:
     sys.path.insert(0, str(current_dir))
+
+# Log the current Python path
+logger.info(f"Python path: {sys.path}")
+logger.info(f"Current working directory: {os.getcwd()}")
 
 from app.config.database import Database
 from app.models.user import FitnessGoal, Sex, UnitSystem, UserProfile
