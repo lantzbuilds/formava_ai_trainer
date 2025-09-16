@@ -221,8 +221,9 @@ class RecentWorkoutSeeder:
                     "type": "normal",
                     "weight_kg": weight if weight > 0 else None,
                     "reps": reps,
-                    "duration_seconds": None,
                     "distance_meters": None,
+                    "duration_seconds": None,
+                    "custom_metric": None,
                     "rpe": random.choice([6, 7, 7, 8, 8, 9]),  # RPE 6-9
                 }
             )
@@ -297,14 +298,17 @@ class RecentWorkoutSeeder:
         workout_title = random.choice(title_templates)
 
         return {
-            "id": str(uuid.uuid4()),
             "title": workout_title,
             "description": f"Focused {workout_type} body training session",
             "start_time": start_time.isoformat().replace("+00:00", "Z"),
             "end_time": end_time.isoformat().replace("+00:00", "Z"),
-            "user_id": user_id,
-            "type": "workout",
+            "routine_id": None,  # Not using a routine
+            "is_private": False,  # Make workouts public for demo
             "exercises": workout_exercises,
+            # Keep these for local database storage
+            "_local_id": str(uuid.uuid4()),
+            "_local_user_id": user_id,
+            "_local_type": "workout",
         }
 
     def seed_recent_workouts_for_user(
@@ -356,7 +360,12 @@ class RecentWorkoutSeeder:
                     logger.info(
                         f"Creating workout in Hevy platform: {workout['title']}"
                     )
-                    hevy_workout_id = self.hevy_api.create_workout(workout)
+                    # Prepare workout data for Hevy API (exclude local fields)
+                    api_workout = {
+                        k: v for k, v in workout.items() if not k.startswith("_local_")
+                    }
+                    hevy_workout_data = {"workout": api_workout}
+                    hevy_workout_id = self.hevy_api.create_workout(hevy_workout_data)
                     if hevy_workout_id:
                         # Update workout with Hevy ID before saving to database
                         workout["hevy_id"] = hevy_workout_id
@@ -368,8 +377,17 @@ class RecentWorkoutSeeder:
                             f"⚠️ Failed to create workout in Hevy, saving to database only"
                         )
 
-                # Save to local database
-                workout_id = self.db.save_workout(workout, user_id=user_id)
+                # Save to local database (restore local fields for database storage)
+                db_workout = workout.copy()
+                db_workout["id"] = workout.get("_local_id")
+                db_workout["user_id"] = workout.get("_local_user_id")
+                db_workout["type"] = workout.get("_local_type")
+                # Remove the local prefix fields before saving
+                for key in list(db_workout.keys()):
+                    if key.startswith("_local_"):
+                        del db_workout[key]
+
+                workout_id = self.db.save_workout(db_workout, user_id=user_id)
                 workout_ids.append(workout_id)
                 logger.info(
                     f"Created workout: {workout['title']} on {workout_day['date'].strftime('%Y-%m-%d')} for {username}"
