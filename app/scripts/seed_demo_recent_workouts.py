@@ -46,11 +46,18 @@ def load_hevy_exercise_ids():
     """Load the real Hevy exercise IDs from the JSON file."""
     try:
         hevy_ids_path = project_root / "hevy_exercise_ids.json"
+        logger.info(f"Loading Hevy exercise IDs from: {hevy_ids_path}")
         with open(hevy_ids_path, "r") as f:
             data = json.load(f)
-            return data.get("exercise_mapping", {})
+            mapping = data.get("exercise_mapping", {})
+            logger.info(f"Loaded {len(mapping)} exercise IDs")
+            logger.info("Sample mappings:")
+            for name, id in list(mapping.items())[:5]:
+                logger.info(f"  {name}: {id}")
+            return mapping
     except Exception as e:
         logger.error(f"Failed to load Hevy exercise IDs: {e}")
+        logger.error(f"Current working directory: {os.getcwd()}")
         return {}
 
 
