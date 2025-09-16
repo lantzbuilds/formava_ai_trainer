@@ -69,8 +69,10 @@ def load_hevy_exercise_ids():
             for exercise in exercises:
                 # Clean up the title to match Hevy API format (lowercase, no special chars)
                 title = exercise.get("title", "").lower().strip()
-                hevy_id = exercise.get("exercise_template_id")
+                # Try both possible ID fields
+                hevy_id = exercise.get("exercise_template_id") or exercise.get("id")
                 if title and hevy_id:
+                    logger.info(f"Adding exercise mapping: {title} -> {hevy_id}")
                     mapping[title] = hevy_id
 
             logger.info(
