@@ -159,7 +159,7 @@ EXERCISES = {
         "rep_range": (6, 12),
     },
     "bent_over_row": {
-        "id": "D2387AB1-C4E5-6F78-9012-3456789ABCDE",
+        "id": HEVY_EXERCISE_IDS.get("bent over row (barbell)", "D2387AB1"),
         "title": "Bent Over Row (Barbell)",
         "base_weight": 50,
         "progression": 2.5,
@@ -174,7 +174,7 @@ EXERCISES = {
         "rep_range": (6, 10),
     },
     "leg_press": {
-        "id": "3FD83744-5678-90AB-CDEF-123456789012",
+        "id": HEVY_EXERCISE_IDS.get("leg press", "3FD83744"),
         "title": "Leg Press",
         "base_weight": 120,
         "progression": 5,
@@ -182,14 +182,14 @@ EXERCISES = {
     },
     # Shoulder exercises
     "overhead_press": {
-        "id": "073032BB-4567-890A-BCDE-F123456789AB",
+        "id": HEVY_EXERCISE_IDS.get("overhead press (barbell)", "073032BB"),
         "title": "Overhead Press (Barbell)",
         "base_weight": 40,
         "progression": 1.25,
         "rep_range": (6, 10),
     },
     "lateral_raise": {
-        "id": "DE68C825-6789-0ABC-DEF1-23456789ABCD",
+        "id": HEVY_EXERCISE_IDS.get("lateral raise (dumbbell)", "DE68C825"),
         "title": "Lateral Raise (Dumbbell)",
         "base_weight": 8,
         "progression": 1.25,
@@ -197,7 +197,7 @@ EXERCISES = {
     },
     # Arm exercises
     "bicep_curl": {
-        "id": "01A35BF9-7890-ABCD-EF12-3456789ABCDE",
+        "id": HEVY_EXERCISE_IDS.get("bicep curl (dumbbell)", "01A35BF9"),
         "title": "Bicep Curl (Dumbbell)",
         "base_weight": 12,
         "progression": 1.25,
@@ -348,9 +348,16 @@ class RecentWorkoutSeeder:
                 ]
                 notes = random.choice(notes_options)
 
+            # Get the real exercise ID from our mapping
+            exercise_title = exercise_data["title"].lower().strip()
+            exercise_id = HEVY_EXERCISE_IDS.get(exercise_title)
+            if not exercise_id:
+                logger.warning(f"No Hevy ID found for exercise: {exercise_title}")
+                continue
+
             workout_exercises.append(
                 {
-                    "exercise_template_id": exercise_data["id"],
+                    "exercise_template_id": exercise_id,
                     "superset_id": None,
                     "notes": notes,
                     "sets": sets,
@@ -450,6 +457,24 @@ class RecentWorkoutSeeder:
                         k: v for k, v in workout.items() if not k.startswith("_local_")
                     }
                     hevy_workout_data = {"workout": api_workout}
+
+                    # Log the workout data being sent
+                    logger.info("Sending workout data to Hevy API:")
+                    logger.info(f"Title: {api_workout.get('title')}")
+                    logger.info(f"Start time: {api_workout.get('start_time')}")
+                    logger.info(f"End time: {api_workout.get('end_time')}")
+                    logger.info(
+                        f"Number of exercises: {len(api_workout.get('exercises', []))}"
+                    )
+                    for i, exercise in enumerate(api_workout.get("exercises", [])):
+                        logger.info(f"Exercise {i+1}:")
+                        logger.info(
+                            f"  Template ID: {exercise.get('exercise_template_id')}"
+                        )
+                        logger.info(f"  Sets: {len(exercise.get('sets', []))}")
+                        for j, set_data in enumerate(exercise.get("sets", [])):
+                            logger.info(f"  Set {j+1}: {set_data}")
+
                     hevy_workout_id = self.hevy_api.create_workout(hevy_workout_data)
                     if hevy_workout_id:
                         # Update workout with Hevy ID before saving to database
