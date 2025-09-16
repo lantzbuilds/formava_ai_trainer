@@ -27,6 +27,8 @@ if str(current_dir) not in sys.path:
 
 from app.config.database import Database
 from app.models.user import FitnessGoal, Sex, UnitSystem, UserProfile
+from app.services.hevy_api import HevyAPI
+from app.utils.crypto import decrypt_api_key
 
 # Configure logging
 logging.basicConfig(
@@ -141,8 +143,9 @@ WORKOUT_SPLITS = {
 class RecentWorkoutSeeder:
     """Generate realistic recent workout history for demo and test users."""
 
-    def __init__(self, db: Database):
+    def __init__(self, db: Database, hevy_api: Optional[HevyAPI] = None):
         self.db = db
+        self.hevy_api = hevy_api
 
     def create_or_find_test_user(self) -> Optional[str]:
         """Create or find the test user for staging."""
@@ -348,6 +351,24 @@ class RecentWorkoutSeeder:
             )
 
             try:
+                # Create workout in Hevy platform if API is available
+                if self.hevy_api:
+                    logger.info(
+                        f"Creating workout in Hevy platform: {workout['title']}"
+                    )
+                    hevy_workout_id = self.hevy_api.create_workout(workout)
+                    if hevy_workout_id:
+                        # Update workout with Hevy ID before saving to database
+                        workout["hevy_id"] = hevy_workout_id
+                        logger.info(
+                            f"✅ Created workout in Hevy with ID: {hevy_workout_id}"
+                        )
+                    else:
+                        logger.warning(
+                            f"⚠️ Failed to create workout in Hevy, saving to database only"
+                        )
+
+                # Save to local database
                 workout_id = self.db.save_workout(workout, user_id=user_id)
                 workout_ids.append(workout_id)
                 logger.info(
@@ -434,8 +455,22 @@ def main():
         logger.error(f"❌ Failed to connect to database: {e}")
         sys.exit(1)
 
+    # Initialize Hevy API with demo API key from environment
+    hevy_api = None
+    demo_api_key = os.getenv("HEVY_API_KEY")
+    if demo_api_key:
+        try:
+            hevy_api = HevyAPI(demo_api_key, is_encrypted=False)
+            logger.info("✅ Successfully initialized Hevy API")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to initialize Hevy API: {e}")
+            logger.warning("Will create workouts in database only")
+    else:
+        logger.warning("⚠️ No HEVY_API_KEY environment variable found")
+        logger.warning("Will create workouts in database only")
+
     # Initialize seeder
-    seeder = RecentWorkoutSeeder(db)
+    seeder = RecentWorkoutSeeder(db, hevy_api)
 
     total_workouts = 0
     success = True
