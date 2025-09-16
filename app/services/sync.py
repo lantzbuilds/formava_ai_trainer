@@ -59,15 +59,28 @@ def sync_hevy_data(user_state, sync_type="recent"):
 
     # Determine date range for sync
     end_date = datetime.now(timezone.utc)
-    if sync_type == "full":
+
+    # Auto-detect demo/test API key and force full sync for better demo experience
+    is_demo_key = api_key.startswith("42c1e") if api_key else False
+
+    if sync_type == "full" or is_demo_key:
         # Full sync: fetch all workouts from a very early date
+        # Use full sync for demo keys to ensure seeded data is captured
         start_date = datetime(2000, 1, 1, tzinfo=timezone.utc)
+        if is_demo_key:
+            logger.info(
+                "Detected demo API key - using full sync to capture seeded workout history"
+            )
     else:
         # Recent sync: last 30 days
         start_date = end_date - timedelta(days=30)
 
     # Sync workouts in the determined date range
+    logger.info(
+        f"Syncing workouts from {start_date.isoformat()} to {end_date.isoformat()}"
+    )
     workouts = hevy_api.get_workouts(start_date, end_date)
+    logger.info(f"Retrieved {len(workouts)} workouts from Hevy API")
     if workouts:
         enriched_workouts = []
         for workout in workouts:
