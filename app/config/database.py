@@ -909,8 +909,15 @@ class Database:
             # Get base exercises
             try:
                 base_doc = self.db.get("base_exercises")
-                if base_doc and "exercises" in base_doc:
-                    exercises.extend(base_doc["exercises"])
+                if base_doc:
+                    logger.info(f"Found base exercises document: {base_doc.get('_id')}")
+                    if "exercises" in base_doc:
+                        logger.info(f"Found {len(base_doc['exercises'])} base exercises")
+                        exercises.extend(base_doc["exercises"])
+                    else:
+                        logger.warning("Base exercises document exists but has no exercises field")
+                else:
+                    logger.warning("Base exercises document not found")
             except couchdb.http.ResourceNotFound:
                 logger.info("No base exercises found in database")
 
