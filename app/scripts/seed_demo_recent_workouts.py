@@ -57,9 +57,33 @@ TEST_USER_USERNAME = "test_user_staging"  # Test user for staging
 
 # Load real Hevy exercise IDs from JSON file
 def load_hevy_exercise_ids():
-    """Load the real Hevy exercise IDs from the JSON file."""
+    """Load exercise IDs from database or fallback to JSON file."""
     try:
-        # Try multiple possible locations for the file
+        # First try to get exercises from database
+        logger.info("Attempting to load exercise IDs from database...")
+        db = Database()
+        exercises = db.get_exercises(include_custom=False)  # Only get base exercises
+        if exercises:
+            # Create mapping from exercise title to ID
+            mapping = {}
+            for exercise in exercises:
+                # Clean up the title to match Hevy API format (lowercase, no special chars)
+                title = exercise.get("title", "").lower().strip()
+                hevy_id = exercise.get("exercise_template_id")
+                if title and hevy_id:
+                    mapping[title] = hevy_id
+
+            logger.info(
+                f"Successfully loaded {len(mapping)} exercise IDs from database"
+            )
+            logger.info("Sample mappings from database:")
+            for title, id in list(mapping.items())[:5]:
+                logger.info(f"  {title}: {id}")
+            return mapping
+        else:
+            logger.warning("No exercises found in database, falling back to JSON file")
+
+        # Fallback to JSON file if database lookup fails
         possible_paths = [
             project_root / "hevy_exercise_ids.json",  # Root directory
             Path(__file__).parent.parent.parent
@@ -75,21 +99,23 @@ def load_hevy_exercise_ids():
                 with open(path, "r") as f:
                     data = json.load(f)
                     mapping = data.get("exercise_mapping", {})
-                    logger.info(f"Successfully loaded {len(mapping)} exercise IDs")
-                    logger.info("Sample mappings:")
+                    logger.info(
+                        f"Successfully loaded {len(mapping)} exercise IDs from file"
+                    )
+                    logger.info("Sample mappings from file:")
                     for name, id in list(mapping.items())[:5]:
                         logger.info(f"  {name}: {id}")
                     return mapping
             else:
                 logger.warning(f"File not found at: {path}")
 
-        # If we get here, we couldn't find the file anywhere
-        logger.error("Could not find hevy_exercise_ids.json in any expected location")
+        # If we get here, we couldn't find the IDs anywhere
+        logger.error("Could not load exercise IDs from database or file")
         logger.error(f"Current working directory: {os.getcwd()}")
         logger.error(f"Script location: {Path(__file__).absolute()}")
         return {}
     except Exception as e:
-        logger.error(f"Failed to load Hevy exercise IDs: {e}")
+        logger.error(f"Failed to load exercise IDs: {e}")
         logger.error(f"Current working directory: {os.getcwd()}")
         logger.error(f"Script location: {Path(__file__).absolute()}")
         return {}
