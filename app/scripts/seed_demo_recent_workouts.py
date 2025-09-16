@@ -302,7 +302,6 @@ class RecentWorkoutSeeder:
             "description": f"Focused {workout_type} body training session",
             "start_time": start_time.isoformat().replace("+00:00", "Z"),
             "end_time": end_time.isoformat().replace("+00:00", "Z"),
-            "routine_id": None,  # Not using a routine
             "is_private": False,  # Make workouts public for demo
             "exercises": workout_exercises,
             # Keep these for local database storage
