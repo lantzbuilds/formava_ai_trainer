@@ -24,6 +24,9 @@ RUN pip3 install --upgrade pip && \
 # Copy the rest of the application
 COPY . .
 
+# Verify exercise IDs file exists
+RUN ls -la hevy_exercise_ids.json || echo "Exercise IDs file is missing!"
+
 # Create necessary directories
 RUN mkdir -p data/vectorstore
 
