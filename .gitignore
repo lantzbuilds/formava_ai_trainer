@@ -66,6 +66,7 @@ couchdb/local.ini
 
 # Temporary files and generated data
 *.json
+!hevy_exercise_ids.json  # Track exercise IDs for production seeding
 *.csv
 *.txt
 !requirements.txt

@@ -40,18 +40,35 @@ logger = logging.getLogger(__name__)
 DEMO_USER_ID = "075ce2423576c5d4a0d8f883aa4ebf7e"  # Demo user (consistent with populate_exercises.py)
 TEST_USER_USERNAME = "test_user_staging"  # Test user for staging
 
-# Common exercises with realistic data (using IDs from Hevy API)
+
+# Load real Hevy exercise IDs from JSON file
+def load_hevy_exercise_ids():
+    """Load the real Hevy exercise IDs from the JSON file."""
+    try:
+        hevy_ids_path = project_root / "hevy_exercise_ids.json"
+        with open(hevy_ids_path, "r") as f:
+            data = json.load(f)
+            return data.get("exercise_mapping", {})
+    except Exception as e:
+        logger.error(f"Failed to load Hevy exercise IDs: {e}")
+        return {}
+
+
+# Load real exercise IDs
+HEVY_EXERCISE_IDS = load_hevy_exercise_ids()
+
+# Common exercises with realistic data (using real IDs from Hevy API)
 EXERCISES = {
     # Chest exercises
     "bench_press": {
-        "id": "50DFDFAB-B914-4C89-9EC9-6C3F8B0A5B2C",
+        "id": HEVY_EXERCISE_IDS.get("bench press (barbell)", "79D0BB3A"),
         "title": "Bench Press (Barbell)",
         "base_weight": 60,  # kg
         "progression": 2.5,  # kg per week
         "rep_range": (6, 10),
     },
     "incline_dumbbell_press": {
-        "id": "A1B2C3D4-E5F6-7890-ABCD-EF1234567890",
+        "id": HEVY_EXERCISE_IDS.get("incline dumbbell press", "A69FF221"),
         "title": "Incline Dumbbell Press",
         "base_weight": 25,  # kg per dumbbell
         "progression": 1.25,
@@ -59,14 +76,14 @@ EXERCISES = {
     },
     # Back exercises
     "deadlift": {
-        "id": "93472AC1-B5D6-4E7F-8901-234567890ABC",
+        "id": HEVY_EXERCISE_IDS.get("deadlift", "93472AC1"),
         "title": "Deadlift (Barbell)",
         "base_weight": 80,
         "progression": 2.5,
         "rep_range": (5, 8),
     },
     "pull_ups": {
-        "id": "7C50F118-9A2B-4C5D-6E7F-890123456789",
+        "id": HEVY_EXERCISE_IDS.get("pull up", "1B2B1E7C"),
         "title": "Pull Up",
         "base_weight": 0,
         "progression": 0,
@@ -81,7 +98,7 @@ EXERCISES = {
     },
     # Leg exercises
     "squat": {
-        "id": "6622E5A0-1234-5678-90AB-CDEF12345678",
+        "id": HEVY_EXERCISE_IDS.get("squat", "6622E5A0"),
         "title": "Squat (Barbell)",
         "base_weight": 70,
         "progression": 2.5,
