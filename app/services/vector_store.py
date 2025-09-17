@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -516,101 +517,165 @@ class ExerciseVectorStore:
             logger.error(f"Error searching exercises by goal: {str(e)}")
             return []
 
+    def _prepare_workout_document(self, workout: Dict) -> Optional[tuple]:
+        """
+        Prepare a single workout for vectorization.
+
+        Args:
+            workout: Workout dictionary
+
+        Returns:
+            Tuple of (content, metadata, id) or None if workout should be skipped
+        """
+        # Skip if workout is missing required fields
+        if not workout.get("title") or not workout.get("exercises"):
+            logger.warning(
+                f"Skipping workout due to missing required fields: {workout}"
+            )
+            return None
+
+        # Get workout ID
+        workout_id = workout.get("id", str(uuid.uuid4()))
+
+        # Extract exercise information
+        exercises_info = []
+        for exercise in workout.get("exercises", []):
+            exercise_title = exercise.get("title", "Unknown Exercise")
+            exercise_notes = exercise.get("notes")
+            sets_info = []
+            for set_data in exercise.get("sets", []):
+                weight = set_data.get("weight_kg", 0)
+                reps = set_data.get("reps", 0)
+                rpe = set_data.get("rpe")
+                duration = set_data.get("duration_seconds")
+                distance = set_data.get("distance_meters")
+                custom_metric = set_data.get("custom_metric")
+
+                # Build set info string based on exercise type
+                if duration is not None:
+                    set_info = f"{duration}s"
+                elif distance is not None:
+                    set_info = f"{distance}m"
+                elif custom_metric is not None:
+                    # For exercises like stair machine that use custom_metric
+                    set_info = f"{custom_metric} {'floors' if 'stair' in exercise_title.lower() else 'steps'}"
+                else:
+                    set_info = f"{weight}kg x {reps} reps"
+
+                # Add RPE if present
+                if rpe is not None:
+                    set_info += f" @ RPE {rpe}"
+
+                sets_info.append(set_info)
+
+            # Combine exercise info
+            exercise_info = f"{exercise_title}: {' | '.join(sets_info)}"
+            if exercise_notes:
+                exercise_info += f" [Notes: {exercise_notes}]"
+            exercises_info.append(exercise_info)
+
+        # Create document content
+        content = (
+            f"Workout: {workout.get('title')} - "
+            f"Date: {workout.get('start_time', 'Unknown')} - "
+            f"Duration: {workout.get('duration_minutes', 'Unknown')} minutes - "
+            f"Exercises: {' | '.join(exercises_info)}"
+        )
+
+        # Create metadata
+        metadata = {
+            "id": str(workout_id),
+            "title": str(workout.get("title")),
+            "start_time": str(workout.get("start_time")),
+            "end_time": str(workout.get("end_time")),
+            "duration_minutes": str(workout.get("duration_minutes")),
+            "exercise_count": len(workout.get("exercises", [])),
+            "type": "workout_history",
+            "user_id": str(workout.get("user_id")),
+        }
+
+        return (content, metadata, str(workout_id))
+
     def add_workout_history(self, workouts: List[Dict]) -> None:
         """
-        Add workout history to the vector store.
+        Add workout history to the vector store with optimized parallel processing.
 
         Args:
             workouts (List[Dict]): List of workout dictionaries
         """
+        if not workouts:
+            logger.info("No workouts to add to vector store")
+            return
+
         try:
-            # Convert workouts to documents
+            logger.info(f"Starting vectorization of {len(workouts)} workouts...")
+
+            # Prepare documents in parallel
             documents = []
             metadatas = []
             ids = []
 
-            for workout in workouts:
-                # Skip if workout is missing required fields
-                if not workout.get("title") or not workout.get("exercises"):
-                    logger.warning(
-                        f"Skipping workout due to missing required fields: {workout}"
-                    )
-                    continue
-
-                # Get workout ID
-                workout_id = workout.get("id", str(uuid.uuid4()))
-
-                # Extract exercise information
-                exercises_info = []
-                for exercise in workout.get("exercises", []):
-                    exercise_title = exercise.get("title", "Unknown Exercise")
-                    exercise_notes = exercise.get("notes")
-                    sets_info = []
-                    for set_data in exercise.get("sets", []):
-                        weight = set_data.get("weight_kg", 0)
-                        reps = set_data.get("reps", 0)
-                        rpe = set_data.get("rpe")
-                        duration = set_data.get("duration_seconds")
-                        distance = set_data.get("distance_meters")
-                        custom_metric = set_data.get("custom_metric")
-
-                        # Build set info string based on exercise type
-                        if duration is not None:
-                            set_info = f"{duration}s"
-                        elif distance is not None:
-                            set_info = f"{distance}m"
-                        elif custom_metric is not None:
-                            # For exercises like stair machine that use custom_metric
-                            set_info = f"{custom_metric} {'floors' if 'stair' in exercise_title.lower() else 'steps'}"
-                        else:
-                            set_info = f"{weight}kg x {reps} reps"
-
-                        # Add RPE if present
-                        if rpe is not None:
-                            set_info += f" @ RPE {rpe}"
-
-                        sets_info.append(set_info)
-
-                    # Combine exercise info
-                    exercise_info = f"{exercise_title}: {' | '.join(sets_info)}"
-                    if exercise_notes:
-                        exercise_info += f" [Notes: {exercise_notes}]"
-                    exercises_info.append(exercise_info)
-
-                # Create document content
-                content = (
-                    f"Workout: {workout.get('title')} - "
-                    f"Date: {workout.get('start_time', 'Unknown')} - "
-                    f"Duration: {workout.get('duration_minutes', 'Unknown')} minutes - "
-                    f"Exercises: {' | '.join(exercises_info)}"
-                )
-
-                # Create metadata
-                metadata = {
-                    "id": str(workout_id),
-                    "title": str(workout.get("title")),
-                    "start_time": str(workout.get("start_time")),
-                    "end_time": str(workout.get("end_time")),
-                    "duration_minutes": str(workout.get("duration_minutes")),
-                    "exercise_count": len(workout.get("exercises", [])),
-                    "type": "workout_history",
-                    "user_id": str(workout.get("user_id")),
+            # Use ThreadPoolExecutor for parallel document preparation
+            with ThreadPoolExecutor(max_workers=min(4, len(workouts))) as executor:
+                # Submit all workout preparation tasks
+                future_to_workout = {
+                    executor.submit(self._prepare_workout_document, workout): workout
+                    for workout in workouts
                 }
 
-                documents.append(content)
-                metadatas.append(metadata)
-                ids.append(str(workout_id))
+                # Collect results as they complete
+                for future in as_completed(future_to_workout):
+                    workout = future_to_workout[future]
+                    try:
+                        result = future.result()
+                        if result:
+                            content, metadata, workout_id = result
+                            documents.append(content)
+                            metadatas.append(metadata)
+                            ids.append(workout_id)
+                    except Exception as e:
+                        logger.error(
+                            f"Error preparing workout {workout.get('title', 'Unknown')}: {e}"
+                        )
 
-            # Add to vector store
-            self.vectorstore.add_texts(texts=documents, metadatas=metadatas, ids=ids)
+            if not documents:
+                logger.warning("No valid workouts to add to vector store")
+                return
+
+            logger.info(f"Prepared {len(documents)} workouts for vectorization")
+
+            # Add to vector store in batches to avoid memory issues
+            batch_size = 50  # Process in smaller batches
+            total_batches = (len(documents) + batch_size - 1) // batch_size
+
+            for i in range(0, len(documents), batch_size):
+                batch_end = min(i + batch_size, len(documents))
+                batch_docs = documents[i:batch_end]
+                batch_metas = metadatas[i:batch_end]
+                batch_ids = ids[i:batch_end]
+
+                batch_num = (i // batch_size) + 1
+                logger.info(
+                    f"Adding batch {batch_num}/{total_batches} ({len(batch_docs)} workouts)..."
+                )
+
+                # Add batch to vector store
+                self.vectorstore.add_texts(
+                    texts=batch_docs, metadatas=batch_metas, ids=batch_ids
+                )
+
+                logger.info(f"Completed batch {batch_num}/{total_batches}")
+
             # Persist the vector store to disk
+            logger.info("Persisting vector store to disk...")
             self.vectorstore.persist()
 
-            logger.info(f"Added {len(workouts)} workouts to vector store")
+            logger.info(f"Successfully added {len(documents)} workouts to vector store")
             if documents and metadatas:
                 logger.info("Sample of added workout:")
                 logger.info(f"Content: {documents[0]}")
                 logger.info(f"Metadata: {metadatas[0]}")
+
         except Exception as e:
             logger.error(f"Error adding workouts to vector store: {str(e)}")
             raise
