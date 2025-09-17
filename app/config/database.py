@@ -793,6 +793,64 @@ class Database:
 
         return existing_ids
 
+    def are_base_exercises_bootstrapped(self) -> bool:
+        """
+        Check if base exercises have already been bootstrapped.
+
+        Returns:
+            True if base exercises exist, False otherwise
+        """
+        try:
+            base_exercises_doc = self.get_document("base_exercises")
+            if base_exercises_doc and base_exercises_doc.get("exercises"):
+                exercise_count = len(base_exercises_doc.get("exercises", []))
+                logger.info(
+                    f"Found {exercise_count} base exercises already bootstrapped"
+                )
+                return exercise_count > 0
+            return False
+        except Exception as e:
+            logger.error(f"Error checking base exercises bootstrap status: {e}")
+            return False
+
+    def get_last_sync_timestamp(self, user_id: str) -> Optional[datetime]:
+        """
+        Get the last sync timestamp for a user.
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            Last sync timestamp or None if no previous sync
+        """
+        try:
+            user_doc = self.get_document(user_id)
+            if user_doc and user_doc.get("last_sync_timestamp"):
+                return datetime.fromisoformat(user_doc["last_sync_timestamp"])
+            return None
+        except Exception as e:
+            logger.error(f"Error getting last sync timestamp: {e}")
+            return None
+
+    def update_last_sync_timestamp(self, user_id: str, timestamp: datetime) -> None:
+        """
+        Update the last sync timestamp for a user.
+
+        Args:
+            user_id: User ID
+            timestamp: Sync timestamp
+        """
+        try:
+            user_doc = self.get_document(user_id)
+            if user_doc:
+                user_doc["last_sync_timestamp"] = timestamp.isoformat()
+                self.save_document(user_doc)
+                logger.info(
+                    f"Updated last sync timestamp for user {user_id}: {timestamp.isoformat()}"
+                )
+        except Exception as e:
+            logger.error(f"Error updating last sync timestamp: {e}")
+
     def save_workouts_batch(self, workouts: List[Dict[str, Any]]) -> None:
         """
         Save multiple workouts in a single batch operation.

@@ -820,14 +820,14 @@ class HevyAPI:
             except requests.exceptions.HTTPError as e:
                 if e.response.status_code == 404:
                     # Page not found, we've reached the end of available pages
-                    print(f"Page {page} not found, stopping pagination")
+                    logger.info(f"Page {page} not found, stopping pagination")
                     break
                 else:
                     # Re-raise other HTTP errors
                     raise
             except Exception as e:
                 # Log other exceptions and continue with what we have so far
-                print(f"Error fetching page {page}: {e}")
+                logger.error(f"Error fetching page {page}: {e}")
                 break
 
         return ExerciseList(

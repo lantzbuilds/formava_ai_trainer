@@ -753,3 +753,92 @@ class ExerciseVectorStore:
         except Exception as e:
             logger.error(f"Error getting all exercise ids and names: {str(e)}")
             return set(), {}
+
+    def ensure_custom_exercises_loaded(self, user_id: str) -> bool:
+        """
+        Ensure custom exercises are loaded for a user before AI recommendations.
+        This is called on-demand when generating routines.
+
+        Args:
+            user_id: User ID to load custom exercises for
+
+        Returns:
+            True if custom exercises are available, False otherwise
+        """
+        try:
+            # Check if custom exercises are already in vector store
+            results = self.vectorstore.get(
+                where={"$and": [{"user_id": user_id}, {"type": "custom_exercise"}]},
+                include=["metadatas"],
+            )
+
+            if results and results.get("metadatas"):
+                logger.info(
+                    f"Found {len(results['metadatas'])} custom exercises already loaded for user {user_id}"
+                )
+                return True
+
+            # Load custom exercises from database
+            logger.info(f"Loading custom exercises for user {user_id}...")
+            db = Database()
+            custom_exercises = db.get_custom_exercises(user_id)
+
+            if custom_exercises:
+                logger.info(
+                    f"Found {len(custom_exercises)} custom exercises in database"
+                )
+                # Add to vector store
+                self.add_exercises(custom_exercises)
+                logger.info(
+                    f"Added {len(custom_exercises)} custom exercises to vector store"
+                )
+                return True
+            else:
+                # Try to fetch from Hevy API if not in database
+                logger.info(
+                    f"No custom exercises in database, fetching from Hevy API..."
+                )
+                try:
+                    from app.services.hevy_api import HevyAPI
+                    from app.utils.crypto import decrypt_api_key
+
+                    user_doc = db.get_document(user_id)
+                    if user_doc and user_doc.get("hevy_api_key"):
+                        api_key = decrypt_api_key(user_doc["hevy_api_key"])
+                        hevy_api = HevyAPI(api_key, is_encrypted=False)
+
+                        custom_exercise_list = hevy_api.get_all_exercises(
+                            include_custom=True
+                        )
+                        if custom_exercise_list.exercises:
+                            # Filter to only include custom exercises
+                            custom_exercises = [
+                                exercise
+                                for exercise in custom_exercise_list.exercises
+                                if exercise.is_custom
+                            ]
+                            if custom_exercises:
+                                exercises_data = [
+                                    exercise.model_dump()
+                                    for exercise in custom_exercises
+                                ]
+                                # Save to database for future use
+                                db.save_exercises(exercises_data, user_id=user_id)
+                                # Add to vector store
+                                self.add_exercises(exercises_data)
+                                logger.info(
+                                    f"Fetched and added {len(custom_exercises)} custom exercises from Hevy API"
+                                )
+                                return True
+
+                    logger.info(f"No custom exercises found for user {user_id}")
+                    return False
+                except Exception as api_error:
+                    logger.error(
+                        f"Error fetching custom exercises from Hevy API: {api_error}"
+                    )
+                    return False
+
+        except Exception as e:
+            logger.error(f"Error ensuring custom exercises are loaded: {e}")
+            return False
