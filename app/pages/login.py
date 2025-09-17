@@ -25,6 +25,15 @@ def login_view():
 
         with gr.Row():
             login_button = gr.Button("Login", variant="primary")
-            error_message = gr.Markdown(visible=False)
+
+        error_message = gr.Markdown(visible=False, elem_classes="error-message")
+
+        def clear_error():
+            """Clear error message when user starts typing."""
+            return gr.update(value="", visible=False)
+
+        # Clear error message when user starts typing
+        username.change(fn=clear_error, outputs=[error_message])
+        password.change(fn=clear_error, outputs=[error_message])
 
         return login_button, error_message, username, password

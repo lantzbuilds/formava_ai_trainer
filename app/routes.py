@@ -160,12 +160,31 @@ def setup_routes(app, state):
             """Handle login attempt."""
             try:
                 logger.info(f"Attempting login for username: {username}")
+
+                # Validate input
+                if not username or not password:
+                    error_msg = "Please enter both username and password."
+                    logger.warning("Login attempt with missing credentials")
+                    return (
+                        {},  # user_state
+                        gr.update(value=error_msg, visible=True),  # error_message
+                        gr.update(value=""),  # clear username
+                        gr.update(value=""),  # clear password
+                        *state["update_nav_visibility"](None),  # nav buttons
+                        "login",  # current_page
+                        *state["update_visibility"]("login")[7:],  # button variants
+                    )
+
                 # Get user from database
                 user_doc = db.get_user_by_username(username)
                 if not user_doc:
+                    error_msg = "Invalid username or password. Please check your credentials and try again."
                     logger.warning(f"User not found: {username}")
                     return (
                         {},  # user_state
+                        gr.update(value=error_msg, visible=True),  # error_message
+                        gr.update(value=""),  # clear username
+                        gr.update(value=""),  # clear password
                         *state["update_nav_visibility"](None),  # nav buttons
                         "login",  # current_page
                         *state["update_visibility"]("login")[7:],  # button variants
@@ -176,9 +195,13 @@ def setup_routes(app, state):
 
                 # Verify password using the UserProfile instance
                 if not user_profile.verify_password(password):
+                    error_msg = "Invalid username or password. Please check your credentials and try again."
                     logger.warning(f"Invalid password for user: {username}")
                     return (
                         {},  # user_state
+                        gr.update(value=error_msg, visible=True),  # error_message
+                        gr.update(value=""),  # clear username
+                        gr.update(value=""),  # clear password
                         *state["update_nav_visibility"](None),  # nav buttons
                         "login",  # current_page
                         *state["update_visibility"]("login")[7:],  # button variants
@@ -204,15 +227,22 @@ def setup_routes(app, state):
                 logger.info(f"Updating navigation with user state: {user}")
                 return (
                     user,  # user_state
+                    gr.update(value="", visible=False),  # error_message (clear)
                     *nav_updates,  # nav buttons
                     "dashboard",  # current_page
                     *state["update_visibility"]("dashboard")[7:],  # button variants
                 )
 
             except Exception as e:
+                error_msg = (
+                    "An unexpected error occurred during login. Please try again."
+                )
                 logger.error(f"Login failed: {str(e)}", exc_info=True)
                 return (
                     {},  # user_state
+                    gr.update(value=error_msg, visible=True),  # error_message
+                    gr.update(value=""),  # clear username
+                    gr.update(value=""),  # clear password
                     *state["update_nav_visibility"](None),  # nav buttons
                     "login",  # current_page
                     *state["update_visibility"]("login")[7:],  # button variants
@@ -487,6 +517,9 @@ def setup_routes(app, state):
             inputs=[login_username, login_password, state["user_state"]],
             outputs=[
                 state["user_state"],
+                login_error,  # error_message
+                login_username,  # username field
+                login_password,  # password field
                 register_nav_button,
                 login_nav_button,
                 landing_nav_button,
