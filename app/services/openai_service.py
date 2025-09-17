@@ -411,6 +411,12 @@ class OpenAIService:
             Dictionary containing the generated routine
         """
         try:
+            # Ensure custom exercises are loaded for this user
+            user_id = context.get("user_id")
+            if user_id:
+                logger.info(f"Ensuring custom exercises are loaded for user {user_id}")
+                self.vector_store.ensure_custom_exercises_loaded(user_id)
+
             # Timing: Vector search
             start_time = time.time()
             query = f"{focus} exercises for {context['user_profile']['experience_level']} level"

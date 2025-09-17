@@ -56,42 +56,84 @@ def sync_hevy_data(user_state, sync_type="recent"):
         hevy_api = HevyAPI(api_key, is_encrypted=False)
         logger.info("Hevy API client initialized successfully")
 
-        # Sync base and custom exercises
-        for include_custom in [False, True]:
-            exercise_list = hevy_api.get_all_exercises(include_custom=include_custom)
+        # Sync exercises - skip base exercises if already bootstrapped
+        base_exercises_bootstrapped = db.are_base_exercises_bootstrapped()
+
+        if not base_exercises_bootstrapped:
+            logger.info("Base exercises not bootstrapped, fetching from Hevy API...")
+            exercise_list = hevy_api.get_all_exercises(include_custom=False)
             if exercise_list.exercises:
                 exercises_data = [
                     exercise.model_dump() for exercise in exercise_list.exercises
                 ]
-                db.save_exercises(
-                    exercises_data, user_id=user_doc["_id"] if include_custom else None
-                )
+                db.save_exercises(exercises_data, user_id=None)
                 vector_store.add_exercises(exercises_data)
+        else:
+            logger.info("Base exercises already bootstrapped, skipping...")
 
-        # Determine date range for sync
+        # Skip custom exercises during regular sync - they'll be loaded on-demand for AI recommendations
+        logger.info(
+            "Skipping custom exercises during sync - will be loaded on-demand for AI recommendations"
+        )
+
+        # Determine sync strategy
         end_date = datetime.now(timezone.utc)
-
-        # Auto-detect demo/test API key and force full sync for better demo experience
         is_demo_key = api_key.startswith("42c1e") if api_key else False
 
-        if sync_type == "full" or is_demo_key:
+        # Get last sync timestamp for incremental sync
+        last_sync = db.get_last_sync_timestamp(user_doc["_id"])
+
+        if sync_type == "full" or is_demo_key or last_sync is None:
             # Full sync: fetch all workouts from a very early date
-            # Use full sync for demo keys to ensure seeded data is captured
-            start_date = datetime(2000, 1, 1, tzinfo=timezone.utc)
             if is_demo_key:
                 logger.info(
                     "Detected demo API key - using full sync to capture seeded workout history"
                 )
-        else:
-            # Recent sync: last 30 days
-            start_date = end_date - timedelta(days=30)
+            elif last_sync is None:
+                logger.info("No previous sync found - performing full sync")
+            else:
+                logger.info("Full sync requested")
 
-        # Sync workouts in the determined date range
-        logger.info(
-            f"Syncing workouts from {start_date.isoformat()} to {end_date.isoformat()}"
-        )
-        workouts = hevy_api.get_workouts(start_date, end_date)
-        logger.info(f"Retrieved {len(workouts)} workouts from Hevy API")
+            start_date = datetime(2000, 1, 1, tzinfo=timezone.utc)
+            logger.info(
+                f"Full sync: fetching workouts from {start_date.isoformat()} to {end_date.isoformat()}"
+            )
+            workouts = hevy_api.get_workouts(start_date, end_date)
+            logger.info(f"Retrieved {len(workouts)} workouts from Hevy API")
+        else:
+            # Incremental sync: use workout events since last sync
+            logger.info(
+                f"Incremental sync: checking for workout events since {last_sync.isoformat()}"
+            )
+
+            # First, check for workout events (updates/deletes)
+            events = hevy_api.get_workout_events(last_sync)
+            logger.info(f"Found {len(events)} workout events since last sync")
+
+            # Process events to get updated workout IDs
+            updated_workout_ids = set()
+            for event in events:
+                if event.get("type") in ["workout_updated", "workout_created"]:
+                    updated_workout_ids.add(event.get("workout_id"))
+                elif event.get("type") == "workout_deleted":
+                    # Handle workout deletion
+                    workout_id = event.get("workout_id")
+                    if workout_id:
+                        logger.info(
+                            f"Workout {workout_id} was deleted, removing from database"
+                        )
+                        # TODO: Implement workout deletion from database
+
+            # Fetch updated workouts
+            workouts = []
+            if updated_workout_ids:
+                logger.info(f"Fetching {len(updated_workout_ids)} updated workouts")
+                for workout_id in updated_workout_ids:
+                    workout_details = hevy_api.get_workout_details(workout_id)
+                    if workout_details:
+                        workouts.append(workout_details)
+
+            logger.info(f"Retrieved {len(workouts)} updated workouts from Hevy API")
 
         if workouts:
             enriched_workouts = []
@@ -190,6 +232,9 @@ def sync_hevy_data(user_state, sync_type="recent"):
                 logger.info("No new workouts to add to vector store")
         else:
             logger.info("No workouts found in the specified date range")
+
+        # Update last sync timestamp
+        db.update_last_sync_timestamp(user_doc["_id"], end_date)
 
         SYNC_STATUS["status"] = "complete"
         logger.info("Sync process completed successfully")
