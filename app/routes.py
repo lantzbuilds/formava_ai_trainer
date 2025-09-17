@@ -93,9 +93,13 @@ def setup_routes(app, state):
                 (_, register_error, _) = register_components
             with gr.Group(visible=False) as login_block:
                 login_components = login_view()
-                (login_button, login_error, login_username, login_password) = (
-                    login_components
-                )
+                (
+                    login_button,
+                    login_error,
+                    login_username,
+                    login_password,
+                    login_error_timer,
+                ) = login_components
             with gr.Group(visible=True) as landing_block:
                 landing_components = landing_page_view(state)
                 (
@@ -170,6 +174,7 @@ def setup_routes(app, state):
                         gr.update(value=error_msg, visible=True),  # error_message
                         gr.update(value=""),  # clear username
                         gr.update(value=""),  # clear password
+                        gr.update(active=True),  # start error timer
                         *state["update_nav_visibility"](None),  # nav buttons
                         "login",  # current_page
                         *state["update_visibility"]("login")[7:],  # button variants
@@ -185,6 +190,7 @@ def setup_routes(app, state):
                         gr.update(value=error_msg, visible=True),  # error_message
                         gr.update(value=""),  # clear username
                         gr.update(value=""),  # clear password
+                        gr.update(active=True),  # start error timer
                         *state["update_nav_visibility"](None),  # nav buttons
                         "login",  # current_page
                         *state["update_visibility"]("login")[7:],  # button variants
@@ -202,6 +208,7 @@ def setup_routes(app, state):
                         gr.update(value=error_msg, visible=True),  # error_message
                         gr.update(value=""),  # clear username
                         gr.update(value=""),  # clear password
+                        gr.update(active=True),  # start error timer
                         *state["update_nav_visibility"](None),  # nav buttons
                         "login",  # current_page
                         *state["update_visibility"]("login")[7:],  # button variants
@@ -228,6 +235,9 @@ def setup_routes(app, state):
                 return (
                     user,  # user_state
                     gr.update(value="", visible=False),  # error_message (clear)
+                    gr.update(value=""),  # username (keep filled)
+                    gr.update(value=""),  # password (keep filled)
+                    gr.update(active=False),  # stop error timer
                     *nav_updates,  # nav buttons
                     "dashboard",  # current_page
                     *state["update_visibility"]("dashboard")[7:],  # button variants
@@ -243,6 +253,7 @@ def setup_routes(app, state):
                     gr.update(value=error_msg, visible=True),  # error_message
                     gr.update(value=""),  # clear username
                     gr.update(value=""),  # clear password
+                    gr.update(active=True),  # start error timer
                     *state["update_nav_visibility"](None),  # nav buttons
                     "login",  # current_page
                     *state["update_visibility"]("login")[7:],  # button variants
@@ -520,6 +531,7 @@ def setup_routes(app, state):
                 login_error,  # error_message
                 login_username,  # username field
                 login_password,  # password field
+                login_error_timer,  # error timer
                 register_nav_button,
                 login_nav_button,
                 landing_nav_button,
