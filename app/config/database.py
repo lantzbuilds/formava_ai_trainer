@@ -2,7 +2,7 @@ import json
 import logging
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import couchdb
 from dotenv import load_dotenv
@@ -755,6 +755,84 @@ class Database:
             logger.error(f"Error getting workout by Hevy ID: {str(e)}")
             return None
 
+    def get_existing_workout_ids(self, hevy_ids: List[str]) -> Set[str]:
+        """
+        Get a set of Hevy IDs that already exist in the database.
+        This is more efficient than checking each workout individually.
+
+        Args:
+            hevy_ids: List of Hevy IDs to check
+
+        Returns:
+            Set of Hevy IDs that already exist in the database
+        """
+        existing_ids = set()
+        try:
+            # Use bulk query to check multiple IDs at once
+            # CouchDB views support multiple keys in a single query
+            results = self.db.view(
+                "workouts/by_hevy_id", keys=hevy_ids, include_docs=False
+            )
+            for row in results:
+                existing_ids.add(row.key)
+            logger.info(
+                f"Found {len(existing_ids)} existing workouts out of {len(hevy_ids)} checked"
+            )
+        except Exception as e:
+            logger.error(f"Error getting existing workout IDs: {str(e)}")
+            # Fallback to individual queries if bulk query fails
+            logger.info("Falling back to individual workout checks...")
+            for hevy_id in hevy_ids:
+                try:
+                    if self.get_workout_by_hevy_id(hevy_id):
+                        existing_ids.add(hevy_id)
+                except Exception as individual_error:
+                    logger.error(
+                        f"Error checking individual workout {hevy_id}: {individual_error}"
+                    )
+
+        return existing_ids
+
+    def save_workouts_batch(self, workouts: List[Dict[str, Any]]) -> None:
+        """
+        Save multiple workouts in a single batch operation.
+        This is more efficient than saving workouts individually.
+
+        Args:
+            workouts: List of workout data dictionaries to save
+        """
+        if not workouts:
+            return
+
+        try:
+            # Prepare documents for bulk save
+            docs_to_save = []
+            for workout_data in workouts:
+                doc = {
+                    "_id": f"workout_{workout_data['hevy_id']}",
+                    "type": "workout",
+                    "hevy_id": workout_data["hevy_id"],
+                    "user_id": workout_data["user_id"],
+                    "title": workout_data["title"],
+                    "description": workout_data.get("description", ""),
+                    "start_time": workout_data.get("start_time"),
+                    "end_time": workout_data.get("end_time"),
+                    "duration_minutes": workout_data.get("duration_minutes"),
+                    "exercises": workout_data.get("exercises", []),
+                    "exercise_count": workout_data.get("exercise_count", 0),
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
+                docs_to_save.append(doc)
+
+            # Use CouchDB bulk save
+            self.db.update(docs_to_save)
+            logger.info(f"Successfully saved {len(docs_to_save)} workouts in batch")
+
+        except Exception as e:
+            logger.error(f"Error batch saving workouts: {str(e)}")
+            raise
+
     def save_exercises(
         self,
         exercises: List[Dict[str, Any]],
@@ -912,10 +990,14 @@ class Database:
                 if base_doc:
                     logger.info(f"Found base exercises document: {base_doc.get('_id')}")
                     if "exercises" in base_doc:
-                        logger.info(f"Found {len(base_doc['exercises'])} base exercises")
+                        logger.info(
+                            f"Found {len(base_doc['exercises'])} base exercises"
+                        )
                         exercises.extend(base_doc["exercises"])
                     else:
-                        logger.warning("Base exercises document exists but has no exercises field")
+                        logger.warning(
+                            "Base exercises document exists but has no exercises field"
+                        )
                 else:
                     logger.warning("Base exercises document not found")
             except couchdb.http.ResourceNotFound:

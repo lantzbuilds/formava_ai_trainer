@@ -98,6 +98,14 @@ def sync_hevy_data(user_state, sync_type="recent"):
             new_workouts_count = 0
             skipped_count = 0
 
+            # Batch check for existing workouts to reduce database queries
+            logger.info("Checking for existing workouts in batch...")
+            workout_ids = [workout["id"] for workout in workouts]
+            existing_workout_ids = db.get_existing_workout_ids(workout_ids)
+            logger.info(
+                f"Found {len(existing_workout_ids)} existing workouts out of {len(workout_ids)} total"
+            )
+
             for workout in workouts:
                 # Skip if workout is missing required fields
                 if not workout.get("title") or not workout.get("exercises"):
@@ -114,9 +122,8 @@ def sync_hevy_data(user_state, sync_type="recent"):
                     skipped_count += 1
                     continue
 
-                # Check if workout already exists to prevent duplicates
-                existing_workout = db.get_workout_by_hevy_id(workout["id"])
-                if existing_workout:
+                # Check if workout already exists using batch lookup
+                if workout["id"] in existing_workout_ids:
                     logger.info(
                         f"Workout {workout.get('title')} already exists, skipping"
                     )
@@ -137,15 +144,32 @@ def sync_hevy_data(user_state, sync_type="recent"):
                     "exercise_count": len(workout.get("exercises", [])),
                 }
 
+                enriched_workouts.append(workout_data)
+                new_workouts_count += 1
+
+            # Batch save all new workouts to reduce database operations
+            if enriched_workouts:
+                logger.info(f"Batch saving {len(enriched_workouts)} new workouts...")
                 try:
-                    db.save_workout(workout_data)
-                    enriched_workouts.append(workout_data)
-                    new_workouts_count += 1
-                    logger.info(f"Saved new workout: {workout_data['title']}")
+                    db.save_workouts_batch(enriched_workouts)
+                    logger.info(
+                        f"Successfully saved {len(enriched_workouts)} workouts in batch"
+                    )
                 except Exception as e:
-                    logger.error(f"Error saving workout {workout.get('title')}: {e}")
-                    skipped_count += 1
-                    continue
+                    logger.error(f"Error batch saving workouts: {e}")
+                    # Fallback to individual saves
+                    logger.info("Falling back to individual workout saves...")
+                    successful_saves = 0
+                    for workout_data in enriched_workouts:
+                        try:
+                            db.save_workout(workout_data)
+                            successful_saves += 1
+                        except Exception as individual_error:
+                            logger.error(
+                                f"Error saving individual workout {workout_data.get('title')}: {individual_error}"
+                            )
+                            skipped_count += 1
+                    new_workouts_count = successful_saves
 
             logger.info(
                 f"Sync summary: {new_workouts_count} new workouts, {skipped_count} skipped"

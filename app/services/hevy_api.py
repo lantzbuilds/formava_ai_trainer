@@ -1,5 +1,6 @@
 import json
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Union
 
@@ -46,6 +47,70 @@ class HevyAPI:
             f"Request headers: {json.dumps({k: v[:5] + '...' if k == 'api-key' else v for k, v in self.headers.items()})}"
         )
 
+        # Rate limiting configuration
+        self.last_request_time = 0
+        self.min_request_interval = 0.1  # 100ms between requests
+        self.max_retries = 3
+        self.retry_delay = 1  # Start with 1 second delay
+
+    def _rate_limit(self):
+        """Ensure minimum time between requests to avoid rate limiting."""
+        current_time = time.time()
+        time_since_last_request = current_time - self.last_request_time
+
+        if time_since_last_request < self.min_request_interval:
+            sleep_time = self.min_request_interval - time_since_last_request
+            logger.debug(f"Rate limiting: sleeping for {sleep_time:.3f} seconds")
+            time.sleep(sleep_time)
+
+        self.last_request_time = time.time()
+
+    def _make_request_with_retry(
+        self, method: str, url: str, **kwargs
+    ) -> requests.Response:
+        """Make an HTTP request with exponential backoff retry logic."""
+        for attempt in range(self.max_retries + 1):
+            try:
+                # Apply rate limiting
+                self._rate_limit()
+
+                # Make the request
+                response = requests.request(method, url, **kwargs)
+
+                # If we get a 429 (rate limit), wait and retry
+                if response.status_code == 429:
+                    if attempt < self.max_retries:
+                        wait_time = self.retry_delay * (
+                            2**attempt
+                        )  # Exponential backoff
+                        logger.warning(
+                            f"Rate limited (429), retrying in {wait_time} seconds (attempt {attempt + 1}/{self.max_retries + 1})"
+                        )
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        logger.error("Max retries exceeded for rate limiting")
+                        response.raise_for_status()
+
+                # For other HTTP errors, raise immediately
+                response.raise_for_status()
+                return response
+
+            except requests.exceptions.RequestException as e:
+                if attempt < self.max_retries:
+                    wait_time = self.retry_delay * (2**attempt)
+                    logger.warning(
+                        f"Request failed: {e}, retrying in {wait_time} seconds (attempt {attempt + 1}/{self.max_retries + 1})"
+                    )
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    logger.error(f"Max retries exceeded: {e}")
+                    raise
+
+        # This should never be reached, but just in case
+        raise requests.exceptions.RequestException("Max retries exceeded")
+
     def get_workouts(
         self, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None
     ) -> List[Dict]:
@@ -81,7 +146,9 @@ class HevyAPI:
                     f"Using headers: {json.dumps({k: v[:5] + '...' if k == 'api-key' else v for k, v in self.headers.items()})}"
                 )
 
-                response = requests.get(url, headers=self.headers, params=params)
+                response = self._make_request_with_retry(
+                    "GET", url, headers=self.headers, params=params
+                )
                 logger.info(f"Response status code: {response.status_code}")
                 logger.info(f"Response headers: {dict(response.headers)}")
 
@@ -93,8 +160,6 @@ class HevyAPI:
                     raise requests.exceptions.HTTPError(
                         "401 Unauthorized: Invalid API key"
                     )
-
-                response.raise_for_status()
 
                 # Parse response
                 response_data = response.json()
@@ -163,8 +228,7 @@ class HevyAPI:
         url = f"{self.base_url}/workouts/count"
 
         try:
-            response = requests.get(url, headers=self.headers)
-            response.raise_for_status()
+            response = self._make_request_with_retry("GET", url, headers=self.headers)
             return response.json().get("count", 0)
         except requests.exceptions.RequestException as e:
             print(f"Error fetching workout count: {e}")
@@ -193,8 +257,9 @@ class HevyAPI:
         params = {"since": since_str}
 
         try:
-            response = requests.get(url, headers=self.headers, params=params)
-            response.raise_for_status()
+            response = self._make_request_with_retry(
+                "GET", url, headers=self.headers, params=params
+            )
             return response.json().get("events", [])
         except requests.exceptions.RequestException as e:
             print(f"Error fetching workout events: {e}")
@@ -213,8 +278,7 @@ class HevyAPI:
         url = f"{self.base_url}/workouts/{workout_id}"
 
         try:
-            response = requests.get(url, headers=self.headers)
-            response.raise_for_status()
+            response = self._make_request_with_retry("GET", url, headers=self.headers)
             return response.json()
         except requests.exceptions.RequestException as e:
             print(f"Error fetching workout details: {e}")
@@ -552,8 +616,9 @@ class HevyAPI:
         params = {"page": page, "pageSize": page_size}
 
         try:
-            response = requests.get(url, headers=self.headers, params=params)
-            response.raise_for_status()
+            response = self._make_request_with_retry(
+                "GET", url, headers=self.headers, params=params
+            )
             data = response.json()
 
             # Extract exercise templates
