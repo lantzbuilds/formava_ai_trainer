@@ -29,7 +29,7 @@ def login_view():
         error_message = gr.Markdown(visible=False, elem_classes="error-message")
 
         # Add a timer to auto-clear error messages after 5 seconds
-        error_timer = gr.Timer(value=5.0, active=False)
+        error_timer = gr.Timer(value=15.0, active=False)
 
         def clear_error_on_timer():
             """Clear error message after timer expires."""
