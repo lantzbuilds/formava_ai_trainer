@@ -85,9 +85,12 @@ yarn-error.log*
 # Large data files that shouldn't be in the image
 data/
 *.csv
-*.json
-!hevy_exercise_ids.json  # Include exercise IDs for seeding
 *.pkl
+
+# Specific JSON files to exclude (keep hevy_exercise_ids.json)
+package.json
+package-lock.json
+yarn.lock
 
 # Scripts that are only for local development
 scripts/utilities/
