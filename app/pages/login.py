@@ -28,7 +28,7 @@ def login_view():
 
         error_message = gr.Markdown(visible=False, elem_classes="error-message")
 
-        # Add a timer to auto-clear error messages after 5 seconds
+        # Add a timer to auto-clear error messages after 15 seconds
         error_timer = gr.Timer(value=15.0, active=False)
 
         def clear_error_on_timer():
@@ -40,14 +40,20 @@ def login_view():
             return gr.update(value="", visible=False), gr.update(active=False)
 
         # Clear error message when user starts typing
-        username.change(
+        username.input(
             fn=clear_error_on_user_input, outputs=[error_message, error_timer]
         )
-        password.change(
+        password.input(
             fn=clear_error_on_user_input, outputs=[error_message, error_timer]
         )
 
-        # Auto-clear error message after 5 seconds
+        # Auto-clear error message after 15 seconds
         error_timer.tick(fn=clear_error_on_timer, outputs=[error_message, error_timer])
 
-        return login_button, error_message, username, password, error_timer
+        return (
+            login_button,
+            error_message,
+            username,
+            password,
+            error_timer,
+        )
