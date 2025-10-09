@@ -26,6 +26,7 @@ pytest = "*"
 fastapi = "*"
 uvicorn = {extras = ["standard"], version = "*"}
 python-jose = {extras = ["cryptography"], version = "*"}
+passlib = {extras = ["bcrypt"], version = "*"}
 
 [dev-packages]
 black = "*"

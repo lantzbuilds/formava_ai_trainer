@@ -79,13 +79,16 @@ async def health_check():
     return {"status": "healthy"}
 
 
-# Import and include routers (will be added in next steps)
-# from app.api.routes import auth, dashboard, profile, ai_recommendations, sync
-# app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
-# app.include_router(dashboard.router, prefix="/api", tags=["Dashboard"])
-# app.include_router(profile.router, prefix="/api", tags=["Profile"])
-# app.include_router(ai_recommendations.router, prefix="/api", tags=["AI Recommendations"])
-# app.include_router(sync.router, prefix="/api", tags=["Sync"])
+# Import and include routers
+from app.api.routes import ai_recommendations, auth, dashboard, profile, sync
+
+app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
+app.include_router(dashboard.router, prefix="/api", tags=["Dashboard"])
+app.include_router(profile.router, prefix="/api", tags=["Profile"])
+app.include_router(
+    ai_recommendations.router, prefix="/api", tags=["AI Recommendations"]
+)
+app.include_router(sync.router, prefix="/api", tags=["Sync"])
 
 
 if __name__ == "__main__":
