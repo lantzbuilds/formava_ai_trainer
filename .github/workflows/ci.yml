@@ -1,0 +1,130 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, production, feature/nextjs-migration ]
+  pull_request:
+    branches: [ main, production ]
+
+jobs:
+  # Test the existing Python backend
+  test-backend:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.11]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Run linting
+      run: |
+        ruff check app/
+        ruff format --check app/
+    
+    - name: Run tests
+      run: |
+        pytest tests/ -v
+    
+    - name: Test imports
+      run: |
+        python -c "import app.main; print('Backend imports successfully')"
+
+  # Test the new Next.js frontend
+  test-frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frontend
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Run linting
+      run: npm run lint
+    
+    - name: Run type checking
+      run: npx tsc --noEmit
+    
+    - name: Build application
+      run: npm run build
+    
+    - name: Test build
+      run: |
+        echo "Frontend build completed successfully"
+        ls -la .next/
+
+  # Deploy to staging (main branch)
+  deploy-staging:
+    needs: [test-backend, test-frontend]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Deploy to Render (Staging)
+      run: |
+        echo "Deploying to staging environment"
+        echo "This would trigger Render deployment for staging"
+        # In a real setup, you'd trigger Render deployment here
+        # or use Render's GitHub integration
+
+  # Deploy to production (production branch)
+  deploy-production:
+    needs: [test-backend, test-frontend]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/production' && github.event_name == 'push'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Deploy to Render (Production)
+      run: |
+        echo "Deploying to production environment"
+        echo "This would trigger Render deployment for production"
+        # In a real setup, you'd trigger Render deployment here
+        # or use Render's GitHub integration
+
+  # Build and test Docker images
+  docker-build:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build Python backend image
+      run: |
+        docker build -t formava-backend:latest .
+        echo "Backend Docker image built successfully"
+    
+    - name: Build Next.js frontend image
+      run: |
+        cd frontend
+        docker build -t formava-frontend:latest .
+        echo "Frontend Docker image built successfully"
+
