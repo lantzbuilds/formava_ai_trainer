@@ -23,6 +23,9 @@ tiktoken = "*"
 gradio = "*"
 watchdog = "*"
 pytest = "*"
+fastapi = "*"
+uvicorn = {extras = ["standard"], version = "*"}
+python-jose = {extras = ["cryptography"], version = "*"}
 
 [dev-packages]
 black = "*"
