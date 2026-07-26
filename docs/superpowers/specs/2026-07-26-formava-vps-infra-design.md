@@ -106,17 +106,43 @@ request — sniffable in transit and replayable once captured.
 **The port is being actively probed.** Observed `GET /v404/exec` against Clio on
 port 3000 at 15:31:38 on 2026-07-26.
 
-**The API has never had a legitimate caller.** Every Clio log entry since boot is
-internal cron (`Processed 0 captures`, repeatedly). No external source IPs. This
-is consistent with `.env`, where `MS_TENANT_ID`, `NOTION_API_KEY`, and
-`SUNSAMA_API_KEY` are all commented out — no webhook integration is configured.
+**The endpoint has a real external caller:** an iOS Shortcut performs
+on-device speech-to-text and POSTs the transcript to the capture API. The token
+therefore crosses cellular and public wireless networks in cleartext on every
+capture. This is the highest-severity item in this spec.
 
-**Resolution:** bind Clio to `127.0.0.1`, delete the ufw rule for 3000, access via
-SSH tunnel (`ssh -L 3000:localhost:3000`). Grant Clio no domain and no
-certificate. If webhook ingress is configured later, add `clio.lantzbuilds.com`
-at that point — deliberately *not* on `formava.io`, because Certificate
-Transparency logs are public and permanent, and would publish an internal tool
-in the product domain's record indefinitely.
+Note on observability: Clio's request log records method and path but **not
+source IP** (`[timestamp] GET /path`). Absence of source IPs in the log is not
+evidence of absence of callers, and the periodic `Processed 0 captures` lines
+come from the cron inbox processor, not from the capture endpoint. Placing nginx
+in front of Clio fixes this gap as a side effect — nginx access logs record
+source IPs for every capture request.
+
+**Resolution:** terminate TLS at nginx and bind Clio to loopback.
+
+- `clio.lantzbuilds.com` → nginx (TLS) → `127.0.0.1:3000`
+- Deliberately **not** `clio.formava.io`. Certificate Transparency logs are
+  public and permanent; every hostname in a certificate is published to
+  append-only logs that are routinely mined for subdomain enumeration. A
+  personal tool belongs in a personal domain's public record, not the product's.
+- `limit_req` rate limiting on the capture route — it is a token-authenticated
+  POST endpoint on the open internet
+- fail2ban jail on repeated `401` responses against the capture route
+
+**Cutover sequence — capture must not break.** The iOS Shortcut is the only
+client and cannot be updated remotely, so ordering matters:
+
+1. Add the `clio.lantzbuilds.com` A record
+2. nginx vhost + certbot, `proxy_pass` to `127.0.0.1:3000`. Clio is still bound
+   to `0.0.0.0`, which includes loopback, so the old direct path and the new
+   HTTPS path both work simultaneously
+3. Update the Shortcut to the HTTPS URL; verify a real capture lands end to end
+4. Rotate `CAPTURE_API_TOKEN`; update the Shortcut's token; verify again
+5. **Only then** rebind Clio to `127.0.0.1` and `ufw delete allow 3000/tcp`.
+   The direct plaintext path dies; the HTTPS path is unaffected
+
+Steps 3 and 4 require manual action on the phone. Do not perform step 5 until
+step 4 is verified, or captures fail silently.
 
 ### 3.2 Unfiltered hostile scanning — **medium**
 
@@ -157,19 +183,21 @@ layer in Spec 2.
                            ▼
                   ┌──────────────────┐
                   │  nginx 1.24      │  TLS (certbot), HTTP→HTTPS,
-                  │                  │  HSTS, security headers
+                  │                  │  HSTS, security headers,
+                  │                  │  limit_req on capture route
                   └──────────────────┘
-                     │
-       formava.io / www.formava.io
-                     │
-                     ▼
-       ┌──────────────────────────┐        ┌────────────────────────┐
-       │ Next.js BFF              │        │ Clio                   │
-       │ 127.0.0.1:3001           │        │ 127.0.0.1:3000         │
-       │ systemd: formava-web     │        │ systemd: clio          │
-       └──────────────────────────┘        │ (rebound from 0.0.0.0) │
-                     │                      │ no domain, SSH tunnel  │
-                     │ server-side fetch    └────────────────────────┘
+                     │                              │
+       formava.io / www.formava.io      clio.lantzbuilds.com
+                     │                              │
+                     ▼                              ▼
+       ┌──────────────────────────┐   ┌────────────────────────────┐
+       │ Next.js BFF              │   │ Clio                       │
+       │ 127.0.0.1:3001           │   │ 127.0.0.1:3000             │
+       │ systemd: formava-web     │   │ systemd: clio              │
+       └──────────────────────────┘   │ (rebound from 0.0.0.0)     │
+                     │                 │ caller: iOS Shortcut       │
+                     │ server-side      │ (on-device STT → POST)     │
+                     │ fetch            └────────────────────────────┘
                      ▼
        ┌──────────────────────────┐
        │ FastAPI / uvicorn        │  no public vhost — BFF-only consumer
@@ -239,12 +267,13 @@ Leaves headroom to reintroduce a staging tier later if desired.
 
 ### 5.1 DNS
 
-| Record | Type | Value |
-|--------|------|-------|
-| `formava.io` | A | 144.202.88.7 |
-| `www.formava.io` | A | 144.202.88.7 |
+| Record | Type | Value | Serves |
+|--------|------|-------|--------|
+| `formava.io` | A | 144.202.88.7 | Next.js BFF |
+| `www.formava.io` | A | 144.202.88.7 | redirect to apex |
+| `clio.lantzbuilds.com` | A | 144.202.88.7 | Clio capture API (iOS Shortcut) |
 
-No DNS record for Clio or for FastAPI.
+No DNS record for FastAPI — it is reachable only from the BFF over loopback.
 
 ### 5.2 Provisioning (idempotent, re-runnable)
 
@@ -259,11 +288,16 @@ No DNS record for Clio or for FastAPI.
 
 Implements §3 in full:
 
-- Rebind Clio to `127.0.0.1:3000`; `ufw delete allow 3000/tcp`
-- Rotate VPS root password and `CAPTURE_API_TOKEN`
+- Put Clio behind nginx TLS at `clio.lantzbuilds.com`, then rebind to
+  `127.0.0.1:3000` and `ufw delete allow 3000/tcp` — **following the five-step
+  cutover sequence in §3.1**, which must not be reordered
+- Rotate VPS root password and `CAPTURE_API_TOKEN` (the latter paired with the
+  iOS Shortcut update, per §3.1 step 4)
 - `PasswordAuthentication no` in `sshd_config`; confirm key auth works **before**
   applying
-- fail2ban: add `nginx-badbots` and `nginx-http-auth` jails
+- nginx `limit_req` zone on the Clio capture route
+- fail2ban: add `nginx-badbots` and `nginx-http-auth` jails, plus a jail matching
+  repeated `401` responses on the capture route
 - nginx: HTTP→HTTPS redirect, HSTS, `X-Content-Type-Options`,
   `X-Frame-Options`, `Referrer-Policy`
 
@@ -315,10 +349,14 @@ Exit criteria, expressed as a re-runnable assertion script:
 ✓ curl -I http://formava.io            → 301 to https
 ✓ curl https://formava.io/             → Next.js scaffold renders
 ✓ curl https://formava.io/api/health   → {"db":"ok","pgvector":"0.6.0"}
+✓ curl -I https://clio.lantzbuilds.com → 200/401, valid cert
+✓ iOS Shortcut capture end-to-end      → transcript lands in Clio inbox
+✓ curl http://144.202.88.7:3000/       → connection refused
 ✓ systemctl is-active postgresql formava-api formava-web clio nginx
 ✓ ufw status                           → 22, 80, 443 only
 ✓ ss -tlnp                             → :3000, :3001, :8000 on 127.0.0.1 only
-✓ certbot renew --dry-run              → success
+✓ certbot renew --dry-run              → success (all three hostnames)
+✓ nginx access log                     → source IPs now recorded for captures
 ✓ systemctl list-timers                → pg_dump timer scheduled
 ✓ pg_dump artifact present in /var/backups/formava
 ✓ ssh with password                    → refused
