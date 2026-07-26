@@ -118,6 +118,49 @@ come from the cron inbox processor, not from the capture endpoint. Placing nginx
 in front of Clio fixes this gap as a side effect — nginx access logs record
 source IPs for every capture request.
 
+**Full inbound surface on port 3000** (verified against Clio source). Every route
+below is currently reachable from the open internet:
+
+```
+GET  /health                    unauthenticated
+GET  /status                    unauthenticated
+POST /capture                   ← the only route the Shortcut uses
+POST /capture/bulk
+POST /capture/:id/fix
+POST /capture/fix
+POST /capture/fix/recent
+POST /api/sessions              ┐
+POST /api/sessions/:id/input    │ drives an Anthropic-backed Orchestrator
+GET  /api/sessions/:id/state    │ with filesystem access to the vault
+POST /api/sessions/:id/chat     ┘
+```
+
+**A single token guards all of them.** `verifyToken(token, config.token)` where
+`config.token` → `config.apiToken` → `process.env.CAPTURE_API_TOKEN`
+(`src/index.ts:59`, `:227`). The sessions router is active in production —
+`src/index.ts:172–222` constructs the `orchestrator`, `sessionManager`, and
+`commandRouter` its conditional mount requires.
+
+This escalates the severity of the cleartext transmission. The credential
+crossing cellular networks on every dictation is the same credential that
+authorizes `POST /api/sessions/:id/chat`. Token capture means agent control, not
+merely note injection.
+
+Related footgun: `process.env.CAPTURE_API_TOKEN || 'dev-token'`
+(`src/index.ts:59`) silently degrades to a hardcoded token if the environment
+variable is absent, rather than refusing to start. Same family as Formava's
+`_create_mock_database()` (§3.4).
+
+**Telegram is not an inbound surface.** `src/channels/telegram.ts:1771` uses
+Telegraf long polling (`bot.launch()`) — the bot calls out to Telegram's API and
+receives nothing inbound. It requires no ingress, no vhost, and no open port, and
+is unaffected by binding Clio to loopback. Authorization is by
+`TELEGRAM_ALLOWED_IDS`, independent of the capture token. Recorded here so this
+is not later "fixed" by opening a port that was never needed.
+
+Existing app-layer controls worth preserving: `securityMiddleware()`,
+`captureRateLimiter` on `/capture`, and `express.json({ limit: '10kb' })`.
+
 **Confirmed client contract** (verified from the Shortcut definition):
 
 | Property | Value |
@@ -136,9 +179,17 @@ source IPs for every capture request.
   append-only logs that are routinely mined for subdomain enumeration. A
   personal tool belongs in a personal domain's public record, not the product's.
 
-Because the client uses exactly one path and one method, the vhost can be an
-allowlist rather than a proxy-everything block. Everything Clio currently exposes
-other than `/capture` stops being reachable from the internet:
+Because the client uses exactly one path and one method, the vhost is an
+**allowlist, and this is a security control rather than tidiness.** With an
+exact-match location, the agent-driving `/api/sessions/*` routes become
+unreachable from the internet *even with a valid token*. TLS protects the
+credential in transit; the allowlist bounds what the credential can reach if it
+leaks anyway. Neither measure alone is sufficient, because the token is also
+stored in plaintext in an iCloud-synced Shortcut.
+
+`client_max_body_size 64k` is a deliberately looser outer bound than Clio's own
+`express.json({ limit: '10kb' })` — nginx rejects the absurd, Express enforces the
+real limit. Defence in depth, not duplication.
 
 ```nginx
 limit_req_zone $binary_remote_addr zone=capture:1m rate=10r/m;
@@ -401,7 +452,11 @@ Exit criteria, expressed as a re-runnable assertion script:
 ✓ curl -X POST https://clio.lantzbuilds.com/capture  → 401 without token
 ✓ curl https://clio.lantzbuilds.com/v404/exec        → 404 from nginx, not Clio
 ✓ curl -X GET  https://clio.lantzbuilds.com/capture  → 403 (limit_except)
+✓ POST /api/sessions with a VALID token              → 404 from nginx
+    (proves the allowlist bounds a leaked credential)
+✓ GET  /status with a valid token                    → 404 from nginx
 ✓ iOS Shortcut capture end-to-end      → transcript lands in Clio inbox
+✓ Telegram bot still responds          → long polling unaffected by loopback bind
 ✓ curl http://144.202.88.7:3000/       → connection refused
 ✓ systemctl is-active postgresql formava-api formava-web clio nginx
 ✓ ufw status                           → 22, 80, 443 only
