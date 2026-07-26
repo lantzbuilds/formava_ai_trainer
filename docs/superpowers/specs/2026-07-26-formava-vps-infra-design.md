@@ -118,6 +118,16 @@ come from the cron inbox processor, not from the capture endpoint. Placing nginx
 in front of Clio fixes this gap as a side effect — nginx access logs record
 source IPs for every capture request.
 
+**Confirmed client contract** (verified from the Shortcut definition):
+
+| Property | Value |
+|----------|-------|
+| URL | `http://144.202.88.7:3000/capture` — held in a discrete URL action, so the cutover is a single field edit |
+| Method | `POST` only |
+| Headers | `Authorization: Bearer <CAPTURE_API_TOKEN>`, `Content-Type: application/json` |
+| Body | JSON containing dictated text — kilobytes at most |
+| Frequency | Human-paced dictation; a handful per hour at most |
+
 **Resolution:** terminate TLS at nginx and bind Clio to loopback.
 
 - `clio.lantzbuilds.com` → nginx (TLS) → `127.0.0.1:3000`
@@ -125,24 +135,61 @@ source IPs for every capture request.
   public and permanent; every hostname in a certificate is published to
   append-only logs that are routinely mined for subdomain enumeration. A
   personal tool belongs in a personal domain's public record, not the product's.
-- `limit_req` rate limiting on the capture route — it is a token-authenticated
-  POST endpoint on the open internet
+
+Because the client uses exactly one path and one method, the vhost can be an
+allowlist rather than a proxy-everything block. Everything Clio currently exposes
+other than `/capture` stops being reachable from the internet:
+
+```nginx
+limit_req_zone $binary_remote_addr zone=capture:1m rate=10r/m;
+
+server {
+    listen 443 ssl;
+    server_name clio.lantzbuilds.com;
+
+    client_max_body_size 64k;          # dictated text is small
+
+    location = /capture {              # exact match, not prefix
+        limit_except POST { deny all; }
+        limit_req zone=capture burst=5 nodelay;
+        proxy_pass http://127.0.0.1:3000;
+    }
+
+    location / { return 404; }         # probes never reach Clio
+}
+```
+
+The `GET /v404/exec` probe observed on 2026-07-26 would be answered by nginx with
+a flat 404 and never touch the Node process.
+
 - fail2ban jail on repeated `401` responses against the capture route
 
 **Cutover sequence — capture must not break.** The iOS Shortcut is the only
 client and cannot be updated remotely, so ordering matters:
 
-1. Add the `clio.lantzbuilds.com` A record
+1. Add the `clio.lantzbuilds.com` A record. **Confirm propagation before
+   proceeding** (`dig +short clio.lantzbuilds.com`) — certbot's HTTP-01 challenge
+   fails against a stale record, and the failure looks like a config error
 2. nginx vhost + certbot, `proxy_pass` to `127.0.0.1:3000`. Clio is still bound
    to `0.0.0.0`, which includes loopback, so the old direct path and the new
    HTTPS path both work simultaneously
-3. Update the Shortcut to the HTTPS URL; verify a real capture lands end to end
-4. Rotate `CAPTURE_API_TOKEN`; update the Shortcut's token; verify again
+3. Edit the Shortcut's URL action → `https://clio.lantzbuilds.com/capture`;
+   dictate a real capture and confirm it lands in the Clio inbox
+4. Rotate `CAPTURE_API_TOKEN` in `/opt/clio/.env`, restart Clio, update the
+   Shortcut's `Authorization` header; verify a capture again
 5. **Only then** rebind Clio to `127.0.0.1` and `ufw delete allow 3000/tcp`.
    The direct plaintext path dies; the HTTPS path is unaffected
 
 Steps 3 and 4 require manual action on the phone. Do not perform step 5 until
 step 4 is verified, or captures fail silently.
+
+Two notes on the Shortcut: iOS validates TLS properly on `Get contents of URL`,
+so a Let's Encrypt certificate needs no special handling. And the token lives in
+plaintext inside the Shortcut, which syncs via iCloud — acceptable for this
+threat model, but a reason to keep the token's scope limited to capture only.
+
+HSTS on this vhost should **not** use `includeSubDomains` or `preload`, to avoid
+constraining unrelated `lantzbuilds.com` hosts.
 
 ### 3.2 Unfiltered hostile scanning — **medium**
 
@@ -295,7 +342,9 @@ Implements §3 in full:
   iOS Shortcut update, per §3.1 step 4)
 - `PasswordAuthentication no` in `sshd_config`; confirm key auth works **before**
   applying
-- nginx `limit_req` zone on the Clio capture route
+- Clio vhost as an allowlist: `location = /capture` with `limit_except POST`,
+  `limit_req` at 10r/m burst 5, `client_max_body_size 64k`, and `location / →
+  404` (full block in §3.1)
 - fail2ban: add `nginx-badbots` and `nginx-http-auth` jails, plus a jail matching
   repeated `401` responses on the capture route
 - nginx: HTTP→HTTPS redirect, HSTS, `X-Content-Type-Options`,
@@ -349,7 +398,9 @@ Exit criteria, expressed as a re-runnable assertion script:
 ✓ curl -I http://formava.io            → 301 to https
 ✓ curl https://formava.io/             → Next.js scaffold renders
 ✓ curl https://formava.io/api/health   → {"db":"ok","pgvector":"0.6.0"}
-✓ curl -I https://clio.lantzbuilds.com → 200/401, valid cert
+✓ curl -X POST https://clio.lantzbuilds.com/capture  → 401 without token
+✓ curl https://clio.lantzbuilds.com/v404/exec        → 404 from nginx, not Clio
+✓ curl -X GET  https://clio.lantzbuilds.com/capture  → 403 (limit_except)
 ✓ iOS Shortcut capture end-to-end      → transcript lands in Clio inbox
 ✓ curl http://144.202.88.7:3000/       → connection refused
 ✓ systemctl is-active postgresql formava-api formava-web clio nginx
