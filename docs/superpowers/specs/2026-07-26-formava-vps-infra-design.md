@@ -191,27 +191,83 @@ stored in plaintext in an iCloud-synced Shortcut.
 `express.json({ limit: '10kb' })` — nginx rejects the absurd, Express enforces the
 real limit. Defence in depth, not duplication.
 
+### 3.1.1 Coordinated dependency — token splitting (Clio-side)
+
+The Clio CLI is a genuine HTTP client (`cli/` is a separate package from `src/`).
+`cli/src/http/client.ts` and `cli/src/http/stream.ts` call a configured
+`vpsUrl` over the network; `cli/src/config/store.ts` already validates and accepts
+`https://` URLs, so retargeting is `clio config set-url https://clio.lantzbuilds.com`.
+
+CLI route requirements: `GET /health`, `POST /api/sessions`,
+`POST /api/sessions/:id/input`, `GET /api/sessions/:id/state`,
+`POST /api/sessions/:id/chat` (SSE), `DELETE /api/sessions/:id`.
+
+`/api/sessions/*` must therefore be publicly reachable. Combined with the single
+shared token, that means **the credential sniffable from the iOS Shortcut's
+cleartext traffic also grants remote agent control.** Two independent fixes:
+
+| Fix | Removes | Owner |
+|-----|---------|-------|
+| TLS on the vhost | the sniffing vector | Spec 1 (this doc) |
+| Split capture-scoped and session-scoped tokens | the blast radius if a token leaks | Clio development |
+
+**TLS is the more urgent of the two and does not depend on the split.** Spec 1
+proceeds independently. The split is tracked in the Clio handoff at
+`docs/INFRA-HANDOFF.md` in the Clio repository.
+
+Sequencing note: if the Clio session implements token splitting, coordinate so
+`CAPTURE_API_TOKEN` rotation (§3.1 step 4) happens **once**, not twice — the iOS
+Shortcut requires a manual edit each time.
+
 ```nginx
-limit_req_zone $binary_remote_addr zone=capture:1m rate=10r/m;
+limit_req_zone $binary_remote_addr zone=capture:1m  rate=10r/m;
+limit_req_zone $binary_remote_addr zone=sessions:1m rate=60r/m;
 
 server {
-    listen 443 ssl;
+    listen 443 ssl http2;              # nginx 1.24 form; 1.25.1+ uses `http2 on;`
     server_name clio.lantzbuilds.com;
 
-    client_max_body_size 64k;          # dictated text is small
+    client_max_body_size 64k;
 
-    location = /capture {              # exact match, not prefix
+    # iOS Shortcut — capture only, POST only
+    location = /capture {
         limit_except POST { deny all; }
         limit_req zone=capture burst=5 nodelay;
         proxy_pass http://127.0.0.1:3000;
+    }
+
+    # CLI connection validation
+    location = /health {
+        proxy_pass http://127.0.0.1:3000;
+    }
+
+    # CLI session control — SSE-aware
+    location /api/sessions {
+        limit_req zone=sessions burst=20 nodelay;
+        proxy_pass http://127.0.0.1:3000;
+
+        proxy_http_version 1.1;
+        proxy_set_header Connection '';
+        proxy_buffering off;           # SSE: stream, never buffer
+        proxy_cache off;
+        proxy_read_timeout 120s;       # client aborts at 60s
     }
 
     location / { return 404; }         # probes never reach Clio
 }
 ```
 
-The `GET /v404/exec` probe observed on 2026-07-26 would be answered by nginx with
-a flat 404 and never touch the Node process.
+**The SSE settings are load-bearing.** `POST /api/sessions/:id/chat` streams
+Server-Sent Events (`cli/src/http/stream.ts`). With nginx's default
+`proxy_buffering on`, the response is buffered and typewriter rendering breaks —
+the CLI would hang until the whole reply completed, then dump it at once. The
+default 60s `proxy_read_timeout` would also sever long agent turns.
+
+Still closed to the internet: `/status`, `/capture/bulk`, `/capture/:id/fix`,
+`/capture/fix`, `/capture/fix/recent`. The `GET /v404/exec` probe observed on
+2026-07-26 is answered by nginx with a flat 404 and never touches the Node
+process. If a route turns out to be needed, nginx logs the 404 with its exact
+path — a loud, one-line fix.
 
 - fail2ban jail on repeated `401` responses against the capture route
 
