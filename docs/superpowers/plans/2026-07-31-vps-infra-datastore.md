@@ -28,7 +28,7 @@
 - Hosts: `formava.io`, `www.formava.io`, `clio.lantzbuilds.com`. **No `api.formava.io`** — FastAPI has no public vhost.
 - `/health` response body, exact shape: `{"db": "ok", "pgvector": "<version>"}`. Failure returns HTTP **503**, never a degraded 200.
 - **No silent fallbacks.** Do not replicate `app/config/database.py:112` (`_create_mock_database`). Missing config or an unreachable database is a startup failure or a 503.
-- CI runs `ruff check app/` and `ruff format --check app/` with no config file, so ruff defaults apply (line length 88). All new `app/` code must pass both.
+- CI lint is **scoped to the paths each spec owns**, not all of `app/`. The Gradio layer carries **107 pre-existing ruff violations** and is deleted in Spec 4, so gating on it would make the deploy job permanently unreachable. Spec 1 scopes CI to `ruff check app/health/` and `ruff format --check app/health/`; later specs widen the path as they delete or rewrite code. Ruff runs with no config file, so defaults apply (line length 88). All new code must pass both commands.
 - VPS: `144.202.88.7`, user `root`. SSH via `scripts/deploy.sh`-style `sshpass`/key auth already configured in `../clio-ai-assitant/.env`.
 
 ## Cross-Repo Sequencing (Clio)
@@ -449,6 +449,23 @@ Then change the `Install dependencies` step to also install the API dev deps, an
         pytest tests/ -v
 ```
 
+Finally, **scope the existing lint step**. It currently runs `ruff check app/`
+and `ruff format --check app/`, which fails on 107 pre-existing violations in the
+Gradio layer — the reason CI has been red since October 2025. Replace it with:
+
+```yaml
+    - name: Run linting
+      run: |
+        # Scoped to the code Spec 1 owns. The Gradio layer carries 107
+        # pre-existing violations and is deleted in Spec 4; widen this path
+        # as each later spec lands.
+        ruff check app/health/
+        ruff format --check app/health/
+```
+
+Leave `pytest tests/ -v` unscoped — Task 1b repairs the three broken hevy tests so
+the full suite can pass.
+
 - [ ] **Step 12: Commit**
 
 ```bash
@@ -460,6 +477,106 @@ git commit -m "feat: add FastAPI /health slice with pgvector probe
 Thin-slice payload for Spec 1. Fails loudly with 503 rather than
 reporting healthy on an unreachable database. Slim requirements-api.txt
 keeps the VPS venv independent of the Gradio monolith's dependencies."
+```
+
+---
+
+## Task 1b: Repair the hevy tests so they stop calling a live API
+
+Discovered during Task 1. `tests/unit/test_hevy_api.py` — the repo's only test file
+— patches `app.services.hevy_api.requests.get`, but `hevy_api.py:78` calls
+`requests.request`. **The mock has never intercepted anything.** All three tests
+make real HTTPS calls to `api.hevyapp.com` with the fake key `"fake-key"`, receive
+a 401, and retry with exponential backoff — hence a 24-second runtime and genuine
+`Server: Heroku` headers in the failure output.
+
+`app/services/hevy_api.py` survives unchanged into Spec 4, so this coverage has
+lasting value. Fixing it also removes a third-party network dependency from every
+CI run.
+
+**Files:**
+- Modify: `tests/unit/test_hevy_api.py` (3 patch decorators at lines 23, 43, 66; one assertion at line 87)
+
+**Interfaces:**
+- Consumes: `app.services.hevy_api.HevyAPI` — unchanged, no production code is modified.
+- Produces: 3 passing tests that make zero network calls.
+
+- [ ] **Step 1: Confirm the tests currently reach the network**
+
+```bash
+.venv/bin/python -m pytest tests/unit/test_hevy_api.py -q 2>&1 | tail -20
+```
+
+Expected: 3 failures, a runtime over ~20s, and real Hevy API response headers
+(`Server: Heroku`, `Report-To`) in the captured log — proving the mock is inert.
+
+- [ ] **Step 2: Retarget the patches**
+
+In `tests/unit/test_hevy_api.py`, change all three decorators (lines 23, 43, 66):
+
+```python
+@patch("app.services.hevy_api.requests.request")
+```
+
+`hevy_api.py:78` is `response = requests.request(method, url, **kwargs)`, so this
+is the call that must be intercepted.
+
+- [ ] **Step 3: Fix the assertion that never matched the real message**
+
+At line 87, `requests` raises `"401 Client Error: Unauthorized for url: ..."`, not
+`"401 Unauthorized"`:
+
+```python
+        assert "401 Client Error" in str(excinfo.value)
+```
+
+- [ ] **Step 4: Add an assertion that the mock was actually used**
+
+This is the guard that makes a future wrong-target patch fail loudly instead of
+silently reaching the network. Add to each of the three tests, after the existing
+assertions:
+
+```python
+    # Guard: a wrong patch target would silently hit the real API instead.
+    assert mock_request.called
+```
+
+Rename each test's mock parameter from `mock_get` to `mock_request` to match the
+new target, and update the existing `mock_get.return_value` / `mock_get.side_effect`
+references accordingly.
+
+- [ ] **Step 5: Run the tests and confirm they pass fast and offline**
+
+```bash
+.venv/bin/python -m pytest tests/unit/test_hevy_api.py -v
+```
+
+Expected: 3 passed, runtime **under 2 seconds** (no retry backoff), and no Hevy
+API headers in the output. The speed is the evidence that no network call happened.
+
+- [ ] **Step 6: Confirm the full suite is now green**
+
+```bash
+export FORMAVA_DATABASE_URL="postgresql://formava:formava_dev@localhost:5432/formava"
+export FORMAVA_TEST_DSN="$FORMAVA_DATABASE_URL"
+.venv/bin/python -m pytest tests/ -v
+```
+
+Expected: 8 passed (3 hevy + 3 health unit + 2 health integration), 0 failed.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add tests/unit/test_hevy_api.py
+git commit -m "fix: repair hevy tests that were calling the live API
+
+The patch target was requests.get but hevy_api.py:78 calls
+requests.request, so the mock never intercepted anything and all three
+tests made real HTTPS calls to api.hevyapp.com with a fake key, failing
+on a 401 after retry backoff. Retargets the patches, corrects an
+assertion that never matched requests' actual error message, and asserts
+the mock was called so a future wrong target fails loudly rather than
+silently reaching the network."
 ```
 
 ---
