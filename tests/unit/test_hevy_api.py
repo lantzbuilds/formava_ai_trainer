@@ -69,20 +69,30 @@ def test_get_workouts_pagination(mock_request, hevy_api_instance):
 
 @patch("app.services.hevy_api.requests.request")
 def test_get_workouts_handles_http_error(mock_request, hevy_api_instance):
-    # Arrange
+    # Arrange: a realistic 401 response. Real raise_for_status() raises,
+    # which is what drives hevy_api's retry-then-propagate path.
     mock_response = MagicMock()
     mock_response.status_code = 401
-    mock_response.text = "Unauthorized"
+    mock_response.text = "InvalidApiKey"
     mock_response.headers = {}
     mock_response.request.url = "http://fake.url"
     mock_response.request.headers = {}
-    # Don't raise from raise_for_status(); let get_workouts() check status_code
+    http_error = requests.exceptions.HTTPError("401 Client Error: Unauthorized")
+    http_error.response = mock_response
+    mock_response.raise_for_status.side_effect = http_error
     mock_request.return_value = mock_response
+
+    # Keep the test fast without changing the code path: retries still run,
+    # they just don't sleep. This exercises the real retry logic at
+    # _make_request_with_retry:99-109 without the 7s of backoff delays.
+    hevy_api_instance.retry_delay = 0
 
     # Act & Assert
     with pytest.raises(requests.exceptions.HTTPError) as excinfo:
         hevy_api_instance.get_workouts()
-    # get_workouts() raises its own HTTPError with this message for 401
-    assert "401 Unauthorized" in str(excinfo.value)
+
+    assert "401 Client Error" in str(excinfo.value)
+    # The wrapper retries before giving up, so more than one attempt happens.
+    assert mock_request.call_count == hevy_api_instance.max_retries + 1
     # Guard: a wrong patch target would silently hit the real API instead.
     assert mock_request.called
