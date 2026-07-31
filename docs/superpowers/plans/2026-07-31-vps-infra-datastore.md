@@ -31,6 +31,22 @@
 - CI runs `ruff check app/` and `ruff format --check app/` with no config file, so ruff defaults apply (line length 88). All new `app/` code must pass both.
 - VPS: `144.202.88.7`, user `root`. SSH via `scripts/deploy.sh`-style `sshpass`/key auth already configured in `../clio-ai-assitant/.env`.
 
+## Cross-Repo Sequencing (Clio)
+
+Clio-side findings live in `../clio-ai-assitant/docs/INFRA-HANDOFF.md` and are
+owned by a separate session. Only one is order-sensitive:
+
+| Clio finding | Run | Reason |
+|---|---|---|
+| **2 — fail-fast config** | **Before Task 6** | Task 6 Step 7 edits `/opt/clio/.env`. Clio's `\|\| 'dev-token'` fallback (`src/index.ts:59`) turns a botched edit into a silent boot on a repository-published token. Landing this first converts that into a refusal to start. |
+| 3 — loopback bind | After Task 6 Step 9 | One line. The ufw rule is already the effective control; this is defence in depth and lets `verify.sh` drop its off-host workaround. |
+| 4 — source-IP logging | After Spec 1 | nginx supplies source IPs at the proxy layer from Task 5 onward. |
+| 1 — token splitting | After Spec 1 | Costs one extra manual phone edit. Not worth interleaving a code change into a cutover; TLS (Task 6) is the acute fix and shouldn't wait on it. |
+| 5, 6 | Anytime | No coupling. |
+
+If finding 2 has **not** landed before Task 6, Step 7's assertions are the
+compensating control — do not skip them.
+
 ## Manual Steps (Human, Not Agent)
 
 Three things an agent cannot do. The plan halts at each until confirmed:
@@ -1353,17 +1369,51 @@ Expected: nginx access log shows `POST /capture` (and the fix route) with **your
 
 The current token was exposed in plaintext during assessment.
 
+⚠️ **This step is the one place where Clio's `|| 'dev-token'` fallback is
+dangerous** (`src/index.ts:59`, handoff finding 2). If the `sed` below mangles or
+removes the line, `process.env.CAPTURE_API_TOKEN` becomes undefined and Clio boots
+on a token that is published in its own repository — while `systemctl is-active`
+still reports `active`. The assertions are not optional.
+
 ```bash
 ssh root@144.202.88.7 '
+  set -e
   NEW="$(openssl rand -hex 32)"
-  echo "NEW TOKEN: ${NEW}"
-  sed -i "s/^CAPTURE_API_TOKEN=.*/CAPTURE_API_TOKEN=${NEW}/" /opt/clio/.env
+
+  # Assert the variable exists in the expected form before editing it.
+  grep -qE "^CAPTURE_API_TOKEN=" /opt/clio/.env \
+    || { echo "ABORT: CAPTURE_API_TOKEN= line not found as expected"; exit 1; }
+
+  cp /opt/clio/.env /opt/clio/.env.bak
+  sed -i "s|^CAPTURE_API_TOKEN=.*|CAPTURE_API_TOKEN=${NEW}|" /opt/clio/.env
+
+  # Assert the edit actually took.
+  grep -qF "CAPTURE_API_TOKEN=${NEW}" /opt/clio/.env \
+    || { echo "ABORT: rotation did not apply; restoring"; \
+         mv /opt/clio/.env.bak /opt/clio/.env; exit 1; }
+
   systemctl restart clio
-  sleep 3 && systemctl is-active clio
+  sleep 3
+  systemctl is-active clio
+  echo "NEW TOKEN: ${NEW}"
 '
 ```
 
-Then on the phone, update the `Authorization: Bearer <token>` header in **both** Shortcuts, and run `clio config set-token <new>` for the CLI.
+Then assert Clio is **not** running on the fallback token:
+
+```bash
+curl -s -o /dev/null -w "dev-token: %{http_code}\n" -X POST \
+  -H "Authorization: Bearer dev-token" -H 'Content-Type: application/json' \
+  -d '{"text":"fallback probe"}' https://clio.lantzbuilds.com/capture
+```
+
+Expected: **401**. A 200 or 201 means the rotation silently failed into the
+hardcoded fallback — restore `/opt/clio/.env.bak`, restart Clio, and fix
+handoff finding 2 before retrying.
+
+Then on the phone, update the `Authorization: Bearer <token>` header in **both**
+Shortcuts, and run `clio config set-token <new>` for the CLI. Once Step 8 passes,
+remove the backup: `rm /opt/clio/.env.bak`.
 
 - [ ] **Step 8: Verify captures and CLI still work on the new token**
 
