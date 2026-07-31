@@ -17,7 +17,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+/lib/
 lib64/
 parts/
 sdist/
@@ -67,6 +67,9 @@ couchdb/local.ini
 # Temporary files and generated data
 *.json
 !hevy_exercise_ids.json  # Track exercise IDs for production seeding
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/tsconfig.json
 *.csv
 *.txt
 !requirements.txt
