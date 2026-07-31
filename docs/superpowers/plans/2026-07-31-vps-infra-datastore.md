@@ -721,7 +721,7 @@ With Postgres from Task 1 up, in two terminals:
 ```bash
 # terminal 1
 export FORMAVA_DATABASE_URL="postgresql://formava:formava_dev@localhost:5432/formava"
-python -m uvicorn app.health.api:app --host 127.0.0.1 --port 8000
+python -m uvicorn app.health.api:create_app --factory --host 127.0.0.1 --port 8000
 
 # terminal 2
 cd frontend && FORMAVA_API_URL=http://127.0.0.1:8000 npm run dev
@@ -894,7 +894,7 @@ replace rather than accumulate."
 - Create: `scripts/vps/formava-api.service`, `scripts/vps/formava-web.service`, `scripts/deploy_vps.sh`
 
 **Interfaces:**
-- Consumes: `app.health.api:app` (Task 1); `frontend/.next/standalone/server.js` (Task 2); Postgres DSN (Task 3).
+- Consumes: `app.health.api:create_app` via `--factory` (Task 1); `frontend/.next/standalone/server.js` (Task 2); Postgres DSN (Task 3).
 - Produces: `formava-api.service` on `127.0.0.1:8000`, `formava-web.service` on `127.0.0.1:3001`, both reading `/etc/formava/formava.env`. `scripts/deploy_vps.sh` with subcommands `deploy|sync|install|build|restart|logs|status`.
 
 - [ ] **Step 1: Write the API unit**
