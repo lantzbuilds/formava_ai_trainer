@@ -1302,10 +1302,20 @@ server {
 
 - [ ] **Step 3: Install it and issue the certificate**
 
+⚠️ **`NEEDRESTART_SUSPEND=1` is required on this apt call.** `needrestart` is
+installed with no explicit restart mode, so under `DEBIAN_FRONTEND=noninteractive`
+it auto-restarts daemons whose shared libraries were upgraded. During Task 3 it
+silently bounced `clio-cron.service` as a side effect of installing Postgres. The
+same mechanism could restart `clio.service`, which has `Restart=on-failure` with
+`StartLimitBurst=5` — an apt-triggered restart is exactly the path to leaving Clio
+permanently dead. Suspending it makes the apt call inert with respect to running
+services.
+
 ```bash
 scp scripts/vps/nginx-formava.conf root@144.202.88.7:/etc/nginx/sites-available/formava
 ssh root@144.202.88.7 '
-  apt-get install -y --no-install-recommends certbot python3-certbot-nginx
+  NEEDRESTART_SUSPEND=1 DEBIAN_FRONTEND=noninteractive \
+    apt-get install -y --no-install-recommends certbot python3-certbot-nginx
   ln -sf /etc/nginx/sites-available/formava /etc/nginx/sites-enabled/formava
   nginx -t && systemctl reload nginx
   certbot --nginx -d formava.io -d www.formava.io \
@@ -2035,7 +2045,7 @@ timeout 8 curl -s -o /dev/null "http://${VPS}:3000/capture" 2>/dev/null \
 
 echo "== Host =="
 check "services active" \
-  "$($SSH 'systemctl is-active postgresql formava-api formava-web clio nginx | sort -u | tr -d "\n"')" \
+  "$($SSH 'systemctl is-active postgresql formava-api formava-web clio clio-cron nginx | sort -u | tr -d "\n"')" \
   "active"
 check "ufw ports" \
   "$($SSH "ufw status | grep -cE '^(22|80|443)'")" "3"
