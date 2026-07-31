@@ -121,7 +121,7 @@ Pure local work. No VPS access needed. Establishes the ≥80% coverage standard 
 - Produces:
   - `app.health.checks.PostgresHealth` — Pydantic model, fields `db: str`, `pgvector: str`
   - `app.health.checks.check_postgres(dsn: str) -> PostgresHealth` — raises `psycopg.Error` on failure, never returns a degraded value
-  - `app.health.api.create_app() -> FastAPI` and module-level `app` — uvicorn target is `app.health.api:app`
+  - `app.health.api.create_app(dsn: str | None = None) -> FastAPI` — **no module-level `app`**; uvicorn target is `app.health.api:create_app --factory`
   - `/health` → `200 {"db": "ok", "pgvector": "<version>"}` or `503 {"detail": "..."}`
 
 - [ ] **Step 1: Add the dependency files**
@@ -388,10 +388,12 @@ def create_app(dsn: str | None = None) -> FastAPI:
         return result.model_dump()
 
     return application
-
-
-app = create_app()
 ```
+
+**No module-level `app`.** uvicorn calls the factory itself via `--factory`, so
+importing this module has no side effects and needs no environment variable. That
+keeps `pytest tests/unit/` runnable with zero configuration while preserving
+fail-fast behaviour at real startup.
 
 - [ ] **Step 10: Run the full suite and the linters**
 
@@ -582,13 +584,29 @@ export interface HealthPayload {
  *
  * Server-side only. The browser never calls FastAPI directly under the BFF
  * pattern -- it calls Next.js route handlers, which call FastAPI.
+ *
+ * Deliberately has no default: the "No silent fallbacks" global constraint
+ * applies to configuration as well as to data access. systemd supplies this
+ * via EnvironmentFile; local development sets it explicitly.
+ *
+ * Resolved lazily rather than at module load. `next build` imports this module
+ * for static analysis, and CI builds without runtime configuration -- a
+ * top-level throw would break the build rather than the request. Throwing on
+ * first use still fails loudly: the route handler turns it into a 503, which
+ * the constraint permits.
  */
-const API_BASE_URL = process.env.FORMAVA_API_URL ?? 'http://127.0.0.1:8000';
+function getApiBaseUrl(): string {
+  const url = process.env.FORMAVA_API_URL;
+  if (!url) {
+    throw new Error('FORMAVA_API_URL is not set; refusing to serve');
+  }
+  return url;
+}
 
 class ApiClient {
   async health(): Promise<ApiResponse<HealthPayload>> {
     try {
-      const res = await fetch(`${API_BASE_URL}/health`, {
+      const res = await fetch(`${getApiBaseUrl()}/health`, {
         cache: 'no-store',
       });
 
@@ -714,6 +732,16 @@ Expected: `{"db":"ok","pgvector":"0.6.0"}` (version may differ)
 
 Now stop uvicorn and re-run the curl.
 Expected: HTTP 503 with an `error` field — confirming failures propagate rather than being swallowed.
+
+Finally, confirm missing configuration also surfaces as a 503 rather than a
+silent default. Restart `npm run dev` **without** `FORMAVA_API_URL`:
+
+```bash
+cd frontend && npm run dev
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3000/api/health
+```
+
+Expected: `503`. A `200` would mean a default crept back in.
 
 - [ ] **Step 10: Commit**
 
@@ -886,7 +914,7 @@ Type=simple
 User=root
 WorkingDirectory=/opt/formava
 EnvironmentFile=/etc/formava/formava.env
-ExecStart=/opt/formava/.venv/bin/uvicorn app.health.api:app \
+ExecStart=/opt/formava/.venv/bin/uvicorn app.health.api:create_app --factory \
     --host 127.0.0.1 --port 8000
 Restart=on-failure
 RestartSec=5
