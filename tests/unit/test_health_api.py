@@ -44,3 +44,17 @@ def test_health_returns_503_when_database_unreachable(client_with_broken_db):
 def test_create_app_requires_a_dsn():
     with pytest.raises(ValueError, match="DSN"):
         create_app(dsn="")
+
+
+def test_create_app_reads_dsn_from_environment(monkeypatch):
+    monkeypatch.setenv("FORMAVA_DATABASE_URL", "postgresql://from-env")
+    # Must not raise: this is the production invocation, uvicorn --factory
+    # calls create_app() with no arguments.
+    app = create_app()
+    assert app is not None
+
+
+def test_create_app_raises_when_environment_dsn_is_absent(monkeypatch):
+    monkeypatch.delenv("FORMAVA_DATABASE_URL", raising=False)
+    with pytest.raises(ValueError, match="DSN"):
+        create_app()
