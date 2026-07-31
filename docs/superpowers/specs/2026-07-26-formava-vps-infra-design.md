@@ -229,8 +229,16 @@ server {
 
     client_max_body_size 64k;
 
-    # iOS Shortcut — capture only, POST only
+    # iOS Shortcut — new capture
     location = /capture {
+        limit_except POST { deny all; }
+        limit_req zone=capture burst=5 nodelay;
+        proxy_pass http://127.0.0.1:3000;
+    }
+
+    # iOS Shortcut — correct an existing capture by id.
+    # Regex, because an exact match cannot cover a path parameter.
+    location ~ ^/capture/[^/]+/fix$ {
         limit_except POST { deny all; }
         limit_req zone=capture burst=5 nodelay;
         proxy_pass http://127.0.0.1:3000;
@@ -263,11 +271,27 @@ Server-Sent Events (`cli/src/http/stream.ts`). With nginx's default
 the CLI would hang until the whole reply completed, then dump it at once. The
 default 60s `proxy_read_timeout` would also sever long agent turns.
 
-Still closed to the internet: `/status`, `/capture/bulk`, `/capture/:id/fix`,
-`/capture/fix`, `/capture/fix/recent`. The `GET /v404/exec` probe observed on
-2026-07-26 is answered by nginx with a flat 404 and never touches the Node
-process. If a route turns out to be needed, nginx logs the 404 with its exact
-path — a loud, one-line fix.
+**Why a regex and not `location /capture/`.** A prefix match on `/capture/` would
+also publish `/capture/bulk`, `/capture/fix`, and `/capture/fix/recent`. The
+anchored pattern `^/capture/[^/]+/fix$` requires exactly three segments, so
+`/capture/fix` (two segments) and `/capture/fix/recent` (`[^/]+` would have to be
+`fix`, leaving `/recent` unmatched against `/fix$`) both still fall through to the
+404. Precedence works out because nginx evaluates regex locations before plain
+prefix matches, so `location /` never sees these.
+
+Still closed to the internet: `GET /status`, `/capture/bulk`, `/capture/fix`,
+`/capture/fix/recent`.
+
+Note on `/status`: the Telegram `/status` command is handled by the bot's own
+command router over long polling and never touches HTTP. It is unrelated to the
+unauthenticated `GET /status` route at `src/api/capture.ts:81`, which has no
+identified external caller and therefore stays closed — desirable, given it is
+unauthenticated.
+
+The `GET /v404/exec` probe observed on 2026-07-26 is answered by nginx with a flat
+404 and never touches the Node process. If `/capture/fix` or
+`/capture/fix/recent` turn out to back a second Shortcut, nginx logs the 404 with
+its exact path — a loud, one-line fix.
 
 - fail2ban jail on repeated `401` responses against the capture route
 
@@ -508,9 +532,12 @@ Exit criteria, expressed as a re-runnable assertion script:
 ✓ curl -X POST https://clio.lantzbuilds.com/capture  → 401 without token
 ✓ curl https://clio.lantzbuilds.com/v404/exec        → 404 from nginx, not Clio
 ✓ curl -X GET  https://clio.lantzbuilds.com/capture  → 403 (limit_except)
-✓ POST /api/sessions with a VALID token              → 404 from nginx
-    (proves the allowlist bounds a leaked credential)
-✓ GET  /status with a valid token                    → 404 from nginx
+✓ POST /capture/<id>/fix                             → reaches Clio (401/200)
+✓ POST /capture/fix   with a VALID token             → 404 from nginx
+✓ POST /capture/bulk  with a VALID token             → 404 from nginx
+✓ GET  /status        with a VALID token             → 404 from nginx
+    (the valid-token cases prove the allowlist bounds a leaked credential)
+✓ iOS "fix" Shortcut end-to-end                      → correction applies
 ✓ iOS Shortcut capture end-to-end      → transcript lands in Clio inbox
 ✓ Telegram bot still responds          → long polling unaffected by loopback bind
 ✓ curl http://144.202.88.7:3000/       → connection refused
