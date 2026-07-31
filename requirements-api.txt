@@ -1,0 +1,8 @@
+# Slim production dependencies for the Formava API slice (Spec 1).
+# Deliberately separate from requirements.txt (the Gradio monolith),
+# which is dismantled in Specs 2-4.
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+pydantic==2.11.5
+python-dotenv==1.1.0
+psycopg[binary]>=3.2,<4

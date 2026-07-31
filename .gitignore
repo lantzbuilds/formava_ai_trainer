@@ -70,6 +70,8 @@ couchdb/local.ini
 *.csv
 *.txt
 !requirements.txt
+!requirements-api.txt
+!requirements-api-dev.txt
 !README.txt
 !README.md
 

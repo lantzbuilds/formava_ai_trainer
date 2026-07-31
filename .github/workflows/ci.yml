@@ -10,32 +10,55 @@ jobs:
   # Test the existing Python backend
   test-backend:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: formava
+          POSTGRES_PASSWORD: formava_dev
+          POSTGRES_DB: formava
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U formava -d formava"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     strategy:
       matrix:
         python-version: [3.11]
-    
+
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v4
       with:
         python-version: ${{ matrix.python-version }}
-    
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-    
+        pip install -r requirements-api-dev.txt
+
     - name: Run linting
       run: |
         ruff check app/
         ruff format --check app/
-    
+
+    - name: Enable pgvector
+      run: |
+        PGPASSWORD=formava_dev psql -h localhost -U formava -d formava \
+          -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
     - name: Run tests
+      env:
+        FORMAVA_DATABASE_URL: postgresql://formava:formava_dev@localhost:5432/formava
+        FORMAVA_TEST_DSN: postgresql://formava:formava_dev@localhost:5432/formava
       run: |
         pytest tests/ -v
-    
+
     - name: Test imports
       run: |
         python -c "import app.main; print('Backend imports successfully')"
