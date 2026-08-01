@@ -33,8 +33,28 @@
 
 ## Cross-Repo Sequencing (Clio)
 
+> 🔴 **READ BEFORE TASK 6 — this table is out of date.**
+>
+> Cross-repo ordering is now governed by
+> **`../clio-ai-assitant/docs/VPS-CUTOVER-RUNBOOK.md`**, which is authoritative
+> for *sequencing and cross-repo decisions*. This plan remains authoritative for
+> *how* to execute each Formava task. Where they disagree on ordering, the
+> runbook wins; where they disagree on commands, this plan wins.
+>
+> Three rows below have changed since this was written:
+>
+> | Row | Was | Now |
+> |---|---|---|
+> | 2 — fail-fast | before Task 6 | ✅ **landed and deployed** (`4bc5f41`). Step 7's `dev-token` probe can no longer be what catches a botched edit — Clio now *refuses to boot*, so the restart is the loud failure |
+> | 1 — token splitting | after Spec 1 | 🔴 **reversed — ships in this cutover.** Code already landed (`f4e770a`) and is inert while `CAPTURE_API_TOKEN` stays set, so there is no code change to interleave. **Task 6 Step 7 must be modified** or the split is silently discarded and the extra phone edit is incurred anyway. Replacement command block is in the runbook |
+> | 4 — source-IP logging | after Spec 1 | unchanged, and confirmed correct — Task 7's jail filters nginx `access.log`, so app-level logging gates nothing |
+>
+> Also: `/capture/bulk`, `/capture/fix` and `/capture/fix/recent` were **deleted**
+> (`9972b58`) after the Shortcuts were confirmed to call only `/capture` and
+> `/capture/*/fix`. The vhost allowlist needs no location block for them.
+
 Clio-side findings live in `../clio-ai-assitant/docs/INFRA-HANDOFF.md` and are
-owned by a separate session. Only one is order-sensitive:
+owned by a separate session. Original assessment, superseded above where noted:
 
 | Clio finding | Run | Reason |
 |---|---|---|
