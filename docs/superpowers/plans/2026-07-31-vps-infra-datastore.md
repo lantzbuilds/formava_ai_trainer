@@ -1540,6 +1540,65 @@ ssh root@144.202.88.7 '
 
 Expected: nginx access log shows `POST /capture` (and the fix route) with **your phone's source IP** — the observability gap is now closed — and Clio's log shows the capture arriving. Confirm the dictated text landed in the inbox.
 
+- [ ] **Step 7 PRECONDITION 🔴 — the split must be DEPLOYED, not merely committed**
+
+The runbook directs Step 7 to install `CAPTURE_TOKEN` and `SESSION_TOKEN`. That
+only works if the **running build** reads them. Verified on the host
+2026-08-01:
+
+```
+grep -c "CAPTURE_TOKEN\|SESSION_TOKEN" /opt/clio/dist/src/utils/config.js   → 0
+/opt/clio/dist/src/api/capture.js still contains /capture/bulk, /capture/fix,
+                                                 /capture/fix/recent
+/opt/clio/.env token vars: CAPTURE_API_TOKEN, TELEGRAM_BOT_TOKEN  (no new ones)
+
+deployed build mtime  2026-07-31 21:14:13 UTC  (= 14:14 -0700)
+f4e770a  split          committed 17:36 -0700  → 3h22m AFTER the deploy
+9972b58  route deletion committed 19:42 -0700  → 5h28m AFTER the deploy
+```
+
+The deploy carried finding 2 (fail-fast, `4bc5f41`) but **not** finding 1.
+
+**Why this is not merely untidy.** Run Step 7 against the current build and:
+
+1. The new variables are written and Clio restarts fine — the old build ignores
+   them, still honouring `CAPTURE_API_TOKEN`, so nothing looks wrong.
+2. The Shortcut is then given `CAPTURE_TOKEN`, which the running server has never
+   heard of → **capture breaks**, and only a dictated capture reveals it.
+3. Worse, the runbook's own scope assertion —
+   `capture-token on /api/sessions → expect 401` — **passes for the wrong
+   reason.** A 401 from "unknown token" is indistinguishable from a 401 from
+   "valid token, wrong scope." The check designed to prove the split works would
+   confirm it while it is absent.
+
+**Gate:** before Step 7, confirm the split is live:
+
+```bash
+ssh root@144.202.88.7 'grep -c "CAPTURE_TOKEN" /opt/clio/dist/src/utils/config.js'
+```
+
+Must be non-zero. If it is `0`, stop — CLIO must deploy `f4e770a` + `9972b58`
+first.
+
+**Add a positive control to Step 8**, so the scope assertion cannot pass for the
+wrong reason. Assert the capture token is *recognised* before asserting it is
+*scoped*:
+
+```bash
+# Positive control: the capture token must WORK on its own route.
+curl -s -o /dev/null -w "capture-token on /capture:      %{http_code}\n" -X POST \
+  -H "Authorization: Bearer ${CAP}" -H 'Content-Type: application/json' \
+  -d '{"text":"scope check"}' https://clio.lantzbuilds.com/capture
+
+# Scope assertion: the same token must NOT open the agent surface.
+curl -s -o /dev/null -w "capture-token on /api/sessions: %{http_code}\n" -X POST \
+  -H "Authorization: Bearer ${CAP}" -H 'Content-Type: application/json' \
+  -d '{}' https://clio.lantzbuilds.com/api/sessions
+```
+
+Expected: **200/201 then 401**. A 401 on *both* means the token is simply
+unrecognised and the split is not in effect.
+
 - [ ] **Step 7: 🛑 HUMAN — rotate the token, then update the Shortcuts again**
 
 The current token was exposed in plaintext during assessment.
