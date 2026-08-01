@@ -1,0 +1,25 @@
+[Unit]
+Description=Formava Web (Next.js BFF)
+After=network.target formava-api.service
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/formava/frontend/.next/standalone
+EnvironmentFile=/etc/formava/formava.env
+Environment=NODE_ENV=production
+Environment=PORT=3001
+Environment=HOSTNAME=127.0.0.1
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=formava-web
+
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

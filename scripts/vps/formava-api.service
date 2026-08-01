@@ -1,0 +1,28 @@
+[Unit]
+Description=Formava API (FastAPI)
+After=network.target postgresql.service
+Requires=postgresql.service
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/formava
+EnvironmentFile=/etc/formava/formava.env
+ExecStart=/opt/formava/.venv/bin/uvicorn app.health.api:create_app --factory \
+    --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=formava-api
+
+# Cap ~3x measured steady state. Combined with formava-web (512M) and
+# Postgres (320M) this stays well inside 3.8 GB, so a runaway here is killed
+# by the kernel before it can pressure clio.service into its
+# StartLimitBurst=5 permanent-failure state.
+MemoryMax=768M
+
+[Install]
+WantedBy=multi-user.target
