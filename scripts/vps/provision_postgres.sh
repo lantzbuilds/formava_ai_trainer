@@ -15,12 +15,27 @@ set -euo pipefail
 # the script immediately after this line despite DB_PASSWORD being set
 # correctly, so failure here is tolerated and delegated to the explicit
 # emptiness check below.
+#
+# DB_PASSWORD is pre-initialized so that if fd 0 is fully closed (e.g.
+# `... <&-`, as opposed to merely empty/EOF), `read` fails before ever
+# assigning it and the `${#DB_PASSWORD}` check below still has a defined
+# variable to test under `set -u`, giving our own error message instead of
+# a raw "unbound variable" abort.
+#
+# `IFS=` is scoped to each `read` so bash does not field-split the input:
+# plain `read` strips leading/trailing whitespace, which would silently
+# truncate a password that has boundary spaces (e.g. pasted from a
+# generator or a manager) instead of erroring -- exactly the silent-wrong-
+# state failure mode this hardening exists to eliminate. Scoping it to the
+# `read` command itself (rather than `export IFS=` or setting it at top of
+# script) means it does not leak into any other command in this script.
+DB_PASSWORD=""
 if [ -t 0 ]; then
     printf 'Postgres password for role formava: ' >&2
-    read -rs DB_PASSWORD || true
+    IFS= read -rs DB_PASSWORD || true
     printf '\n' >&2
 else
-    read -r DB_PASSWORD || true
+    IFS= read -r DB_PASSWORD || true
 fi
 
 if [ "${#DB_PASSWORD}" -eq 0 ]; then
