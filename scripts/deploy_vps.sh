@@ -42,6 +42,19 @@ sync_files() {
     # itself) and won't start without it. Only the *source* node_modules
     # trees (repo root and frontend/, both rebuildable via npm install) are
     # meant to be skipped.
+    #
+    # '.env' alone only matches a path component named exactly that -- it
+    # misses .env.local, .env.production, .env.staging, etc., which is
+    # exactly the set of filenames this repo's root .gitignore anticipates
+    # for local secret overrides. The '.env.*' glob is deliberately broad
+    # (matches at any depth, since rsync excludes without a leading '/' are
+    # unanchored) so any such file on a developer's machine never leaves it;
+    # secrets live only in /etc/formava/formava.env on the host.
+    #
+    # requirements.txt (the Gradio monolith's deps, never installed on the
+    # host) is excluded so "no Gradio on the host" holds at the filesystem
+    # level, not just inside the venv. requirements-api.txt and
+    # requirements-api-dev.txt are unaffected -- the deploy needs the former.
     rsync -avz --delete \
         --exclude '.git' \
         --exclude '.venv' \
@@ -49,6 +62,7 @@ sync_files() {
         --exclude '/frontend/node_modules' \
         --exclude '__pycache__' \
         --exclude '.env' \
+        --exclude '.env.*' \
         --exclude '.next/cache' \
         --exclude 'app/pages' \
         --exclude 'app/routes.py' \
@@ -57,6 +71,7 @@ sync_files() {
         --exclude 'tests' \
         --exclude '*.log' \
         --exclude '.DS_Store' \
+        --exclude 'requirements.txt' \
         "$PROJECT_DIR/" "${VPS_USER}@${VPS_HOST}:${APP_PATH}/"
 }
 
