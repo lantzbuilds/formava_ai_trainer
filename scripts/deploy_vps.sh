@@ -33,10 +33,20 @@ sync_files() {
     $SSH "mkdir -p ${APP_PATH}"
 
     # Gradio is deliberately excluded -- it must never reach the VPS.
+    #
+    # node_modules excludes are anchored (leading '/') rather than a bare
+    # 'node_modules' pattern: an unanchored pattern also matches
+    # frontend/.next/standalone/node_modules, which is the trimmed,
+    # production-only dependency set that `next build` traces into the
+    # standalone bundle -- server.js requires it (e.g. the `next` package
+    # itself) and won't start without it. Only the *source* node_modules
+    # trees (repo root and frontend/, both rebuildable via npm install) are
+    # meant to be skipped.
     rsync -avz --delete \
         --exclude '.git' \
         --exclude '.venv' \
-        --exclude 'node_modules' \
+        --exclude '/node_modules' \
+        --exclude '/frontend/node_modules' \
         --exclude '__pycache__' \
         --exclude '.env' \
         --exclude '.next/cache' \
