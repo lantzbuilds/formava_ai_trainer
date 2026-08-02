@@ -1580,6 +1580,19 @@ ssh root@144.202.88.7 'grep -c "CAPTURE_TOKEN" /opt/clio/dist/src/utils/config.j
 Must be non-zero. If it is `0`, stop — CLIO must deploy `f4e770a` + `9972b58`
 first.
 
+> ✅ **SATISFIED as of 2026-08-02 05:17:58 UTC.** CLIO deployed both commits
+> during Task 6 Steps 1–4. Verified on the host: 8 references in the built
+> `config.js`; `/capture/bulk`, `/capture/fix`, `/capture/fix/recent` now 404
+> **upstream on port 3000** as well as at nginx; `/opt/clio/.env` still holds only
+> `CAPTURE_API_TOKEN`, which is the correct inert state — the legacy token is
+> accepted for both scopes until Step 7 adds the scoped pair.
+>
+> One consequence for Step 4's evidence: the three deleted routes no longer prove
+> nginx is the control, since they are gone upstream too. The allowlist is still
+> independently demonstrated by two live cases — `GET /status` returns **200
+> upstream and 404 through nginx**, and the anchored fix regex rejects a
+> four-segment `/capture/a/b/fix` at nginx while `/capture/<id>/fix` reaches Clio.
+
 **Add a positive control to Step 8**, so the scope assertion cannot pass for the
 wrong reason. Assert the capture token is *recognised* before asserting it is
 *scoped*:
