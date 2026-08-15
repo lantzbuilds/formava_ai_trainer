@@ -1,0 +1,27 @@
+# nginx jails for Clio and Formava. Installed to /etc/fail2ban/jail.d/.
+[nginx-http-auth]
+enabled  = true
+port     = http,https
+logpath  = /var/log/nginx/error.log
+maxretry = 5
+findtime = 600
+bantime  = 3600
+
+[nginx-badbots]
+enabled  = true
+port     = http,https
+logpath  = /var/log/nginx/access.log
+maxretry = 2
+findtime = 600
+bantime  = 86400
+
+# Brute-force protection for the capture bearer token. The legitimate client
+# is a human dictating, so repeated 401s are never normal traffic.
+[clio-capture-auth]
+enabled  = true
+port     = http,https
+filter   = clio-capture-auth
+logpath  = /var/log/nginx/access.log
+maxretry = 5
+findtime = 600
+bantime  = 86400
