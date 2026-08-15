@@ -1,6 +1,14 @@
 # nginx jails for Clio and Formava. Installed to /etc/fail2ban/jail.d/.
+#
+# backend = auto is REQUIRED on this host. /etc/fail2ban/jail.d/defaults-debian.conf
+# sets `backend = systemd` for [DEFAULT], which silently overrides logpath: the jail
+# loads, reports active, and monitors nothing, because nginx logs to files and never
+# to the journal. Verify with `fail2ban-client get <jail> logpath` -- it must name the
+# file, not "No file is currently monitored". Do not fix this globally: the sshd jail
+# legitimately uses the systemd backend and works.
 [nginx-http-auth]
 enabled  = true
+backend  = auto
 port     = http,https
 logpath  = /var/log/nginx/error.log
 maxretry = 5
@@ -15,6 +23,7 @@ bantime  = 3600
 # path probes -- matching the Dahua/CGI enumeration traffic this jail targets.
 [nginx-badbots]
 enabled  = true
+backend  = auto
 port     = http,https
 filter   = nginx-botsearch
 logpath  = /var/log/nginx/access.log
@@ -36,6 +45,7 @@ bantime  = 86400
 # 144.202.88.7 already exist from prior verification runs.
 [clio-capture-auth]
 enabled  = true
+backend  = auto
 port     = http,https
 filter   = clio-capture-auth
 logpath  = /var/log/nginx/access.log
