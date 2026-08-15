@@ -1,0 +1,11 @@
+[Unit]
+Description=Formava Postgres backup
+After=postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/formava/scripts/vps/pg_backup.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=formava-backup
