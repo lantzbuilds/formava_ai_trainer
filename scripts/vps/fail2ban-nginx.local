@@ -17,6 +17,16 @@ bantime  = 86400
 
 # Brute-force protection for the capture bearer token. The legitimate client
 # is a human dictating, so repeated 401s are never normal traffic.
+#
+# ignoreip here is jail-specific (overrides, not extends, the global
+# DEFAULT), so it must repeat 127.0.0.1/8 ::1 alongside the host's own
+# public IP. The host's own address is included because manual token
+# verification (curl against the public domain/IP, as during the token
+# cutover) logs with $remote_addr == the host's own IP, not loopback --
+# nginx sees that as the real peer since the request round-trips over the
+# public interface. A short burst of such manual testing could otherwise
+# self-ban the server. Confirmed via nginx access.log: real 401s from
+# 144.202.88.7 already exist from prior verification runs.
 [clio-capture-auth]
 enabled  = true
 port     = http,https
@@ -25,3 +35,4 @@ logpath  = /var/log/nginx/access.log
 maxretry = 5
 findtime = 600
 bantime  = 86400
+ignoreip = 127.0.0.1/8 ::1 144.202.88.7
