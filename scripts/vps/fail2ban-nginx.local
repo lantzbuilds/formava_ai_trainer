@@ -7,9 +7,16 @@ maxretry = 5
 findtime = 600
 bantime  = 3600
 
+# On this host's fail2ban (v1.0.2) there is no filter.d/nginx-badbots.conf;
+# the shipped stock filter for bad-bot/CGI/enumeration probes against
+# access.log is named nginx-botsearch (confirmed via `ls /etc/fail2ban/filter.d/`
+# and a fail2ban ERROR log entry: "Unable to read the filter 'nginx-badbots'"
+# without this line). It covers cgi-bin, phpMyAdmin, WordPress, and webmail
+# path probes -- matching the Dahua/CGI enumeration traffic this jail targets.
 [nginx-badbots]
 enabled  = true
 port     = http,https
+filter   = nginx-botsearch
 logpath  = /var/log/nginx/access.log
 maxretry = 2
 findtime = 600
