@@ -2243,7 +2243,7 @@ Also bump `node-version: '18'` to `'20'` in the existing `test-frontend` job, an
 
 Add two repository secrets: `VPS_SSH_KEY` (a deploy private key, not your personal one) and `VPS_HOST`.
 
-- [ ] **Step 4: Verify CI passes**
+- [x] **Step 4: Verify CI passes**
 
 ```bash
 git add .github/workflows/ci.yml scripts/vps/verify.sh
@@ -2269,13 +2269,18 @@ Then confirm the Actions run is green (the deploy job is skipped on a non-`main`
 > Repointed at `app.health.api:create_app`, the entrypoint `formava-api`
 > actually executes, scoped for the same reason as the ruff step.
 
-- [ ] **Step 5: Final full verification**
+- [x] **Step 5: Final full verification**
 
 ```bash
-CLIO_TOKEN=<new-token> ./scripts/vps/verify.sh
+./scripts/vps/verify.sh
 ```
 
 Expected: `ALL CHECKS PASSED`.
+
+Result: passed, exit 0, on three consecutive runs. `clio-capture-auth` left with
+its original `ignoreip` list and nobody banned. The third run took ~5 min rather
+than ~1: the `/capture` bucket was depleted by the two prior runs and the
+backoff waited it out, which is the intended behaviour.
 
 ---
 

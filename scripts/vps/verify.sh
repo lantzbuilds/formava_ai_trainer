@@ -8,6 +8,11 @@
 # this script's environment rather than passed in, so no secret reaches shell
 # history or the process table of another user.
 #
+# Runtime is roughly a minute from cold, but climbs toward five if it is run
+# several times in quick succession: the /capture rate-limit bucket refills at
+# one slot every 6s and the backoff below waits for it. A long pause during the
+# Clio section is the script being patient, not hung.
+#
 # `set -e` is deliberately omitted: a failing check must not abort the run.
 # Every assertion should report, and the exit code is the roll-up.
 set -uo pipefail
