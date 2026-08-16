@@ -2,7 +2,7 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, production, feature/nextjs-migration ]
+    branches: [ main, production ]
   pull_request:
     branches: [ main, production ]
 
@@ -62,9 +62,17 @@ jobs:
       run: |
         pytest tests/ -v
 
+    # Smoke-test what actually ships. The old check imported app.main, which
+    # pulls in the Gradio layer and hard-requires CouchDB -- a service this
+    # workflow does not run, and one the VPS deliberately does not have
+    # (verify.sh asserts Gradio is absent from the host). Scoped to the
+    # deployed entrypoint for the same reason the ruff step is scoped to
+    # app/health/; widen as later specs land.
     - name: Test imports
+      env:
+        FORMAVA_DATABASE_URL: postgresql://formava:formava_dev@localhost:5432/formava
       run: |
-        python -c "import app.main; print('Backend imports successfully')"
+        python -c "from app.health.api import create_app; create_app(); print('API entrypoint imports successfully')"
 
   # Test the new Next.js frontend
   test-frontend:
@@ -79,10 +87,10 @@ jobs:
     - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '18'
+        node-version: '20'
         cache: 'npm'
         cache-dependency-path: frontend/package-lock.json
-    
+
     - name: Install dependencies
       run: npm ci
     
@@ -100,37 +108,53 @@ jobs:
         echo "Frontend build completed successfully"
         ls -la .next/
 
-  # Deploy to staging (main branch)
-  deploy-staging:
+  # Deploy to the VPS (main branch). Replaces the two Render echo-stubs, which
+  # never deployed anything -- Render builds from its own GitHub integration and
+  # stays live and untouched as the fallback until Spec 4 retires it. Staging is
+  # dropped per the spec; there is one environment now.
+  deploy-vps:
     needs: [test-backend, test-frontend]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Deploy to Render (Staging)
-      run: |
-        echo "Deploying to staging environment"
-        echo "This would trigger Render deployment for staging"
-        # In a real setup, you'd trigger Render deployment here
-        # or use Render's GitHub integration
 
-  # Deploy to production (production branch)
-  deploy-production:
-    needs: [test-backend, test-frontend]
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/production' && github.event_name == 'push'
-    
     steps:
     - uses: actions/checkout@v4
-    
-    - name: Deploy to Render (Production)
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+
+    # Built on the runner, not the host: `next build` wants 1.5-2 GB and would
+    # contend with Clio on a 4 GB box. deploy_vps.sh rsyncs the output.
+    - name: Build frontend
+      working-directory: ./frontend
+      run: npm ci && npm run build
+
+    # A dedicated deploy key, not a personal one. Password auth is off on the
+    # host, so key material is the only way in.
+    - name: Configure SSH
       run: |
-        echo "Deploying to production environment"
-        echo "This would trigger Render deployment for production"
-        # In a real setup, you'd trigger Render deployment here
-        # or use Render's GitHub integration
+        mkdir -p ~/.ssh
+        echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+        chmod 600 ~/.ssh/id_ed25519
+        ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+
+    - name: Deploy
+      env:
+        VPS_HOST: ${{ secrets.VPS_HOST }}
+      run: |
+        ./scripts/deploy_vps.sh sync
+        ./scripts/deploy_vps.sh install
+        ./scripts/deploy_vps.sh restart
+
+    # The full chain: TLS -> nginx -> Next.js BFF -> FastAPI -> Postgres.
+    # Anything less would pass while the database is down.
+    - name: Verify
+      run: |
+        curl -sf https://formava.io/api/health | grep '"db":"ok"'
 
   # Build and test Docker images
   docker-build:
