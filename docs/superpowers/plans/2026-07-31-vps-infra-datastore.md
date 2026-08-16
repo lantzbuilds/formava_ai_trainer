@@ -2074,7 +2074,17 @@ Persistent=true so a missed window runs after reboot."
 - Consumes: every prior task.
 - Produces: `scripts/vps/verify.sh`, a re-runnable assertion of every spec §6 exit criterion, exiting non-zero on any failure.
 
-- [ ] **Step 1: Write the verification script**
+- [x] **Step 1: Write the verification script**
+
+> **The draft below is superseded. `scripts/vps/verify.sh` as shipped is the
+> authority.** It diverges in eight places — the five stale items in
+> `HANDOFF.md`, plus three the live host contradicted (ufw prints a v4 *and* a
+> v6 rule per port so "expect 3" reads 6; `PasswordAuthentication` lives in an
+> `sshd_config.d` drop-in so grepping `sshd_config` is a false negative;
+> fail2ban jails must be checked by logpath, not status). It also guards
+> against two self-inflicted failures the draft could not have anticipated:
+> the script's own 401 probes trip the `clio-capture-auth` jail (24h ban), and
+> its `/capture` probes spend that location's entire nginx rate-limit burst.
 
 `scripts/vps/verify.sh`:
 
@@ -2172,16 +2182,18 @@ $SSH 'free -h | head -2'
 exit "$FAIL"
 ```
 
-- [ ] **Step 2: Run it**
+- [x] **Step 2: Run it**
 
 ```bash
 chmod +x scripts/vps/verify.sh
-CLIO_TOKEN=<new-token> ./scripts/vps/verify.sh
+./scripts/vps/verify.sh    # no token argument; it reads both off the host
 ```
 
 Expected: `ALL CHECKS PASSED`, exit 0. Fix any failures before continuing.
 
-- [ ] **Step 3: Replace the CI deploy stubs**
+Result: 40/40, exit 0, run twice back to back to prove re-runnability.
+
+- [x] **Step 3: Replace the CI deploy stubs**
 
 In `.github/workflows/ci.yml`, replace the `deploy-staging` and `deploy-production` jobs — both currently just `echo "This would trigger Render deployment"` — with a single VPS deploy job. Staging is dropped per the spec, so `main` deploys to the VPS while Render remains live and untouched as fallback.
 
@@ -2244,6 +2256,18 @@ git push -u origin spec/vps-infra-migration
 ```
 
 Then confirm the Actions run is green (the deploy job is skipped on a non-`main` branch, which is expected).
+
+> **Correction:** pushing the branch triggers nothing. The workflow fires only
+> on pushes to `main`/`production` and on PRs targeting them, so a push to
+> `spec/vps-infra-migration` produces no run at all. A PR to `main` is what
+> gets the signal: `test-backend` and `test-frontend` run, while `docker-build`
+> (push-only) and `deploy-vps` (main-only) both skip. Opened as PR #91.
+>
+> The step also required an unplanned fix. `Test imports` ran `import
+> app.main`, which pulls in the Gradio layer and hard-requires CouchDB — a
+> service neither CI nor the VPS runs. It could never have gone green.
+> Repointed at `app.health.api:create_app`, the entrypoint `formava-api`
+> actually executes, scoped for the same reason as the ruff step.
 
 - [ ] **Step 5: Final full verification**
 
