@@ -64,7 +64,10 @@ sync_files() {
         --exclude '.env' \
         --exclude '.env.*' \
         --exclude '.next/cache' \
+        --exclude 'app/main.py' \
         --exclude 'app/pages' \
+        --exclude 'app/components' \
+        --exclude 'app/state' \
         --exclude 'app/routes.py' \
         --exclude 'app/theme.py' \
         --exclude 'app/config/state.py' \

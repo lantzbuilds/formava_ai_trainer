@@ -117,6 +117,14 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
+    # deploy_vps.sh syncs in place with `rsync --delete` and then restarts.
+    # Two concurrent runs would interleave file deletion and service restarts on
+    # a single host. Serialise them, and do NOT cancel a run in flight: a
+    # half-finished sync left behind by a cancellation is worse than a queue.
+    concurrency:
+      group: deploy-vps
+      cancel-in-progress: false
+
     steps:
     - uses: actions/checkout@v4
 
@@ -136,11 +144,29 @@ jobs:
     # A dedicated deploy key, not a personal one. Password auth is off on the
     # host, so key material is the only way in.
     - name: Configure SSH
+      env:
+        VPS_HOST: ${{ secrets.VPS_HOST }}
+        VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        VPS_HOST_KEY: ${{ secrets.VPS_HOST_KEY }}
       run: |
         mkdir -p ~/.ssh
-        echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
-        chmod 600 ~/.ssh/id_ed25519
-        ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+        # umask before the write, not chmod after: a redirect creates the file
+        # 0644 and it stays world-readable until chmod runs.
+        (umask 077; printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519)
+
+        # Pin the host key if VPS_HOST_KEY is set. ssh-keyscan on every run is
+        # trust-on-first-use forever: it accepts whatever key is offered, so a
+        # redirected DNS record or a rebuilt host would be trusted silently and
+        # handed the deploy key. Falls back to keyscan so a missing secret does
+        # not break the deploy, but set it -- get the value from:
+        #   ssh-keyscan -t ed25519 <host>
+        if [ -n "$VPS_HOST_KEY" ]; then
+          printf '%s\n' "$VPS_HOST_KEY" > ~/.ssh/known_hosts
+          echo "Using pinned host key."
+        else
+          echo "::warning::VPS_HOST_KEY not set; falling back to ssh-keyscan (TOFU)."
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+        fi
 
     - name: Deploy
       env:
