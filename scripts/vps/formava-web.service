@@ -1,5 +1,8 @@
 [Unit]
 Description=Formava Web (Next.js BFF)
+# After= only, deliberately not Requires=. The BFF is allowed to start and
+# serve while the API is down -- /api/health then returns 503, which is the
+# correct answer and better than the whole site refusing to start.
 After=network.target formava-api.service
 StartLimitBurst=5
 StartLimitIntervalSec=60
@@ -18,6 +21,18 @@ RestartSec=5
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=formava-web
+
+# Sandboxing — see formava-api.service for the rationale. This one matters
+# more: Next.js is the internet-facing process, so it is where an RCE would
+# land first. ProtectSystem=full leaves /opt writable, which is required for
+# rsync deploys, but makes /usr and /etc read-only to the service itself.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
 
 MemoryMax=512M
 

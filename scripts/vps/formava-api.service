@@ -13,10 +13,28 @@ EnvironmentFile=/etc/formava/formava.env
 ExecStart=/opt/formava/.venv/bin/uvicorn app.health.api:create_app --factory \
     --host 127.0.0.1 --port 8000
 Restart=on-failure
+# StartLimitBurst=5 with RestartSec=5 means five failures inside 60s leaves this
+# unit permanently dead rather than crash-looping -- the same trade §4 describes
+# for clio.service. That is deliberate: a restart storm on a shared 4 GB box is
+# worse than a stopped service. Nothing alerts on it, so verify.sh's "six units
+# active" check is what surfaces it.
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=formava-api
+
+# Sandboxing. This still runs as root (a dedicated formava user is Spec 4 work,
+# alongside the non-root deploy user), so these are what stand between a
+# compromise here and the rest of the box -- which includes a co-tenant service
+# with filesystem access to a personal vault. Cheap, and none of them require
+# an application change: the API writes nothing outside its own tree.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
 
 # Cap ~3x measured steady state. Combined with formava-web (512M) and
 # Postgres (320M) this stays well inside 3.8 GB, so a runaway here is killed

@@ -52,6 +52,11 @@ log() { echo "[provision-postgres] $*"; }
 
 log "Installing packages from Ubuntu repositories..."
 export DEBIAN_FRONTEND=noninteractive
+# NEEDRESTART_SUSPEND stops needrestart from bouncing unrelated services when a
+# shared library is upgraded underneath them. This script's own apt call once
+# restarted clio-cron one second after a libpq5 bump -- on a box whose whole
+# premise is that Formava must not disturb its co-tenant.
+export NEEDRESTART_SUSPEND=1
 apt-get update -qq
 apt-get install -y --no-install-recommends \
     "postgresql-${PG_VERSION}" \
@@ -61,28 +66,49 @@ log "Ensuring role ${DB_USER} exists..."
 # The password-bearing statements are piped to psql via stdin (heredoc)
 # rather than passed with -c, so the plaintext never appears in psql's argv
 # either.
-if ! sudo -u postgres psql -tAc \
+#
+# ON_ERROR_STOP=1 is REQUIRED, not decorative: psql exits 0 on a SQL error
+# unless it is set, so `set -e` never fires and the script would report
+# success having done nothing. Without it, a password containing a single
+# quote breaks the statement below, the role keeps its old password (or is
+# never created), and /etc/formava/formava.env is written with the new one --
+# leaving the API unable to authenticate, with every step reporting success.
+#
+# The single quote is the only injection vector here. Parameter-expansion
+# results are not re-scanned by the shell, so $, backticks and backslashes in
+# the password are already inert inside the heredoc; doubling the quote is
+# what makes it safe as a SQL literal.
+DB_PASSWORD_SQL="${DB_PASSWORD//\'/\'\'}"
+
+if ! sudo -u postgres psql -v ON_ERROR_STOP=1 -tAc \
     "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" | grep -q 1; then
-    sudo -u postgres psql <<SQL
-CREATE ROLE ${DB_USER} LOGIN PASSWORD '${DB_PASSWORD}';
+    sudo -u postgres psql -v ON_ERROR_STOP=1 <<SQL
+CREATE ROLE ${DB_USER} LOGIN PASSWORD '${DB_PASSWORD_SQL}';
 SQL
 else
     log "Role exists; syncing password."
-    sudo -u postgres psql <<SQL
-ALTER ROLE ${DB_USER} WITH LOGIN PASSWORD '${DB_PASSWORD}';
+    sudo -u postgres psql -v ON_ERROR_STOP=1 <<SQL
+ALTER ROLE ${DB_USER} WITH LOGIN PASSWORD '${DB_PASSWORD_SQL}';
 SQL
 fi
 
 log "Ensuring database ${DB_NAME} exists..."
-if ! sudo -u postgres psql -tAc \
+if ! sudo -u postgres psql -v ON_ERROR_STOP=1 -tAc \
     "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q 1; then
     sudo -u postgres createdb -O "${DB_USER}" "${DB_NAME}"
 fi
 
 log "Enabling pgvector in ${DB_NAME}..."
-sudo -u postgres psql -d "${DB_NAME}" -c "CREATE EXTENSION IF NOT EXISTS vector;"
+# ON_ERROR_STOP again: without it, a missing postgresql-16-pgvector package
+# makes this fail while the script prints "Done."
+sudo -u postgres psql -v ON_ERROR_STOP=1 -d "${DB_NAME}" \
+    -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
 log "Applying tuning for 2 vCPU / 3.8 GB..."
+# Keep one pristine copy of the config from before this script ever edited it.
+# -n means the first run wins, so a later re-run cannot overwrite the original
+# with an already-managed version.
+cp -n "${PG_CONF}" "${PG_CONF}.pre-formava" 2>/dev/null || true
 # Values are fixed by the spec's memory budget. Appended in a marked block so
 # re-runs replace rather than accumulate.
 OLD_MARKER="# --- formava tuning (managed) ---"
@@ -121,8 +147,23 @@ systemctl restart postgresql
 systemctl enable postgresql
 
 log "Verifying..."
-sudo -u postgres psql -d "${DB_NAME}" -tAc \
+sudo -u postgres psql -v ON_ERROR_STOP=1 -d "${DB_NAME}" -tAc \
     "SELECT extversion FROM pg_extension WHERE extname='vector'"
-ss -tlnp | grep 5432 || true
+
+# `|| true` here used to swallow the one thing this step exists to detect: if
+# Postgres is not listening, the script reported success. Assert the bind
+# instead, and require it to be loopback -- a wildcard bind would expose the
+# database to the internet, which §5.2 forbids.
+if ss -tln | grep -qE '127\.0\.0\.1:5432|\[::1\]:5432'; then
+    log "Postgres listening on loopback:5432"
+else
+    log "FATAL: Postgres is not listening on loopback:5432"
+    ss -tln | grep 5432 || log "  (nothing bound to 5432 at all)"
+    exit 1
+fi
+if ss -tln | grep -qE '0\.0\.0\.0:5432|\[::\]:5432'; then
+    log "FATAL: Postgres is bound to a wildcard address, not loopback"
+    exit 1
+fi
 
 log "Done."
