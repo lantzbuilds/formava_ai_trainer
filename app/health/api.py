@@ -40,8 +40,13 @@ def create_app(dsn: str | None = None) -> FastAPI:
         try:
             result = check_postgres(resolved)
         except psycopg.Error as exc:
+            # The detail is deliberately generic. /health is unauthenticated and
+            # the BFF relays this body straight to the public internet, so
+            # str(exc) would publish the internal host, port, role and database
+            # name -- psycopg spells all four out on a connection or auth
+            # failure. The full error still reaches the journal for operators.
             logger.error("Health check failed: %s", exc)
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
+            raise HTTPException(status_code=503, detail="database unavailable") from exc
 
         return result.model_dump()
 

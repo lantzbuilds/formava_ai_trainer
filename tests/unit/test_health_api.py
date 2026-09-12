@@ -18,7 +18,12 @@ def client_with_healthy_db(monkeypatch):
 @pytest.fixture
 def client_with_broken_db(monkeypatch):
     def fake_check(dsn: str) -> PostgresHealth:
-        raise psycopg.OperationalError("connection refused")
+        # Shaped like a real psycopg failure, which names the host, port, role
+        # and database. The test below asserts none of that reaches the client.
+        raise psycopg.OperationalError(
+            'connection to server at "127.0.0.1", port 5432 failed: FATAL: '
+            'password authentication failed for user "formava"'
+        )
 
     monkeypatch.setattr("app.health.api.check_postgres", fake_check)
     return TestClient(
@@ -38,7 +43,16 @@ def test_health_returns_503_when_database_unreachable(client_with_broken_db):
 
     # Must fail loudly. A degraded 200 would defeat the purpose.
     assert response.status_code == 503
-    assert "connection refused" in response.json()["detail"]
+    assert response.json()["detail"] == "database unavailable"
+
+
+def test_health_error_does_not_leak_connection_details(client_with_broken_db):
+    """/health is unauthenticated and the BFF relays this body to the public
+    internet, so the psycopg error must not reach the client."""
+    body = client_with_broken_db.get("/health").text
+
+    for secret in ("127.0.0.1", "5432", "formava", "password authentication"):
+        assert secret not in body
 
 
 def test_create_app_requires_a_dsn():
