@@ -110,7 +110,7 @@ export interface SyncStatus {
 export interface ApiError {
   message: string;
   code?: string;
-  details?: any;
+  details?: unknown;
 }
 
 // Form types for UI components

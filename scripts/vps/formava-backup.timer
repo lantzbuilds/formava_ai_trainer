@@ -1,0 +1,11 @@
+[Unit]
+Description=Nightly Formava Postgres backup
+
+[Timer]
+OnCalendar=daily
+# Spread load off the hour, and survive missed windows after a reboot.
+RandomizedDelaySec=1800
+Persistent=true
+
+[Install]
+WantedBy=timers.target

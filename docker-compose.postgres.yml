@@ -1,0 +1,23 @@
+# Local Postgres for development and integration tests.
+# The VPS runs Postgres natively under systemd; this is dev-only.
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: formava_postgres
+    environment:
+      POSTGRES_USER: formava
+      POSTGRES_PASSWORD: formava_dev
+      POSTGRES_DB: formava
+    ports:
+      - "5432:5432"
+    volumes:
+      - formava_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U formava -d formava"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  formava_pgdata:
+    name: formava_pgdata

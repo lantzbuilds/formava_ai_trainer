@@ -1,0 +1,84 @@
+# nginx jails for Clio and Formava. Installed to /etc/fail2ban/jail.d/.
+#
+# backend = auto is REQUIRED on this host. /etc/fail2ban/jail.d/defaults-debian.conf
+# sets `backend = systemd` for [DEFAULT], which silently overrides logpath: the jail
+# loads, reports active, and monitors nothing, because nginx logs to files and never
+# to the journal. Verify with `fail2ban-client get <jail> logpath` -- it must name the
+# file, not "No file is currently monitored". Do not fix this globally: the sshd jail
+# legitimately uses the systemd backend and works.
+# NO-OP TODAY, deliberately kept. This filter matches only nginx's own
+# auth_basic failures in error.log, and there is no `auth_basic` anywhere in
+# this host's effective config (check with `nginx -T | grep auth_basic`), so it
+# can never fire -- lifetime bans: 0. It satisfies §3.2 literally and is
+# pre-positioned for the day a protected location appears. Do not read a
+# passing "jail nginx-http-auth reads ..." in verify.sh as evidence that
+# anything is being protected; see the web-probes jail below for the traffic
+# that actually needs blocking.
+[nginx-http-auth]
+enabled  = true
+backend  = auto
+port     = http,https
+logpath  = /var/log/nginx/error.log
+maxretry = 5
+findtime = 600
+bantime  = 3600
+
+# On this host's fail2ban (v1.0.2) there is no filter.d/nginx-badbots.conf;
+# the shipped stock filter for bad-bot/CGI/enumeration probes against
+# access.log is named nginx-botsearch (confirmed via `ls /etc/fail2ban/filter.d/`
+# and a fail2ban ERROR log entry: "Unable to read the filter 'nginx-badbots'"
+# without this line). It covers cgi-bin, phpMyAdmin, WordPress, and webmail
+# path probes -- matching the Dahua/CGI enumeration traffic this jail targets.
+[nginx-badbots]
+enabled  = true
+backend  = auto
+port     = http,https
+filter   = nginx-botsearch
+logpath  = /var/log/nginx/access.log
+maxretry = 2
+findtime = 600
+bantime  = 86400
+
+# Covers what nginx-botsearch above does NOT: the `zgrab/0.x` user agent and
+# `GET /SDK/webLanguage` that §3.2 actually names, plus the /.env, /.git/ and
+# /.aws/ credential sweeps that are by volume the most common attack traffic
+# reaching this host. Without this jail, §3.2's stated threats were unfiltered
+# despite the nginx-badbots jail being green.
+#
+# maxretry is 3 rather than 2 because the path regex is broad; a client that
+# asks for /.env or /.aws/credentials three times is not making a mistake.
+# Verified with `fail2ban-regex /var/log/nginx/access.log
+# /etc/fail2ban/filter.d/web-probes.conf` -> 50 matches on real traffic, no
+# legitimate request among them.
+[web-probes]
+enabled  = true
+backend  = auto
+port     = http,https
+filter   = web-probes
+logpath  = /var/log/nginx/access.log
+maxretry = 3
+findtime = 600
+bantime  = 86400
+
+# Brute-force protection for the capture bearer token. The legitimate client
+# is a human dictating, so repeated 401s are never normal traffic.
+#
+# ignoreip here is jail-specific (overrides, not extends, the global
+# DEFAULT), so it must repeat 127.0.0.1/8 ::1 alongside the host's own
+# public IP. The host's own address is included because manual token
+# verification (curl against the public domain/IP, as during the token
+# cutover) logs with $remote_addr == the host's own IP, not loopback --
+# nginx sees that as the real peer since the request round-trips over the
+# public interface. A short burst of such manual testing could otherwise
+# self-ban the server. Confirmed via nginx access.log: real 401s from
+# 144.202.88.7 already exist from prior verification runs.
+[clio-capture-auth]
+enabled  = true
+backend  = auto
+port     = http,https
+filter   = clio-capture-auth
+logpath  = /var/log/nginx/access.log
+maxretry = 5
+findtime = 600
+bantime  = 86400
+ignoreip = 127.0.0.1/8 ::1 144.202.88.7
