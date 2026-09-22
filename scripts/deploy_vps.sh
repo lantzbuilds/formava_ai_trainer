@@ -28,7 +28,42 @@ build_frontend() {
     (cd "$PROJECT_DIR/frontend" && npm ci && npm run build)
 }
 
+# `next build` with output:"standalone" deliberately does NOT copy .next/static
+# or public/ into the standalone tree -- Next expects the deployer to do it.
+# Without this the server boots fine and renders SSR HTML, then every
+# /_next/static/chunks/*.js returns Next's own 404, React never hydrates, and
+# the page sits on its loading state forever. It looks like a broken app, not a
+# missing-file problem, which is what makes it worth a loud comment.
+#
+# Staged locally, before rsync, for two reasons: rsync --delete would otherwise
+# remove a copy made on the host, and the running server resolves this directory
+# at startup, so it must be in place before the restart at the end of a deploy.
+stage_standalone_assets() {
+    local SA="$PROJECT_DIR/frontend/.next/standalone"
+
+    if [ ! -d "$SA" ]; then
+        log "ERROR: no standalone build at ${SA}. Run a frontend build first."
+        exit 1
+    fi
+    if [ ! -d "$PROJECT_DIR/frontend/.next/static" ]; then
+        log "ERROR: no .next/static to stage. The frontend build did not finish."
+        exit 1
+    fi
+
+    log "Staging static assets into the standalone tree..."
+    rm -rf "$SA/.next/static" "$SA/public"
+    cp -R "$PROJECT_DIR/frontend/.next/static" "$SA/.next/static"
+    [ -d "$PROJECT_DIR/frontend/public" ] && cp -R "$PROJECT_DIR/frontend/public" "$SA/public"
+
+    # Assert rather than assume: a silent failure here is invisible until a
+    # browser loads the page.
+    [ -d "$SA/.next/static/chunks" ] || { log "ERROR: staging produced no chunks"; exit 1; }
+    log "Staged $(find "$SA/.next/static" -type f | wc -l | tr -d ' ') static files."
+}
+
 sync_files() {
+    stage_standalone_assets
+
     log "Syncing to ${VPS_HOST}:${APP_PATH}..."
     $SSH "mkdir -p ${APP_PATH}"
 

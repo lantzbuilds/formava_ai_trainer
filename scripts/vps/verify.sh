@@ -91,6 +91,19 @@ echo "$BODY" | grep -qi 'formava' \
   && pass "app HTML renders (found 'formava' in body)" \
   || fail "app HTML renders — 'formava' not in body, got $(printf '%s' "$BODY" | wc -c) bytes"
 
+# Serving HTML is not the same as serving a working app. `next build` with
+# output:"standalone" does not copy .next/static into the standalone tree, so
+# the server can return a perfectly good 200 whose every JS chunk 404s: React
+# never hydrates and the page sits on its loading state. Fetch a chunk the page
+# actually asks for, so "the site is up" cannot pass while the app is dead.
+CHUNK="$(printf '%s' "$BODY" | grep -oE '/_next/static/chunks/[^"]+\.js' | head -1)"
+if [ -n "$CHUNK" ]; then
+    check "app JS chunk loads (${CHUNK##*/})" \
+      "$(code "https://formava.io${CHUNK}")" "200"
+else
+    fail "no /_next/static chunk referenced in page HTML — cannot verify hydration"
+fi
+
 # Assert BOTH keys §6 names. db:"ok" is currently unreachable without pgvector,
 # but that coupling lives in checks.py and is invisible from here -- if it were
 # ever loosened, this check would still hold the line.
